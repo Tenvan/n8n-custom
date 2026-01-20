@@ -176,12 +176,20 @@ export class AuthService {
 				}
 			}
 
+			// [CUSTOM-FORK] No Auth: Always allow access without authentication
+			next();
+			// [CUSTOM-FORK] End No Auth
+
+			// [CUSTOM-FORK] No Auth: Disable original authentication check
+			/*
 			const isPreviewMode = process.env.N8N_PREVIEW_MODE === 'true';
 			const shouldSkipAuth = (allowSkipPreviewAuth && isPreviewMode) || allowUnauthenticated;
 
 			if (Object.hasOwn(req, 'user') && req.user) next();
 			else if (shouldSkipAuth) next();
 			else res.status(401).json({ status: 'error', message: 'Unauthorized' });
+			*/
+			// [CUSTOM-FORK] End No Auth
 		};
 	}
 

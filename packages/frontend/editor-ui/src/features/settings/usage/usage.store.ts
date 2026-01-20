@@ -82,6 +82,15 @@ export const useUsageStore = defineStore('usage', () => {
 	};
 
 	const activateLicense = async (activationKey: string, eulaUri?: string) => {
+		// [CUSTOM-FORK] License Activation: Make activation a no-op - license already active locally
+		// License is auto-activated server-side, just refresh license info
+		await getLicenseInfo();
+		await settingsStore.getSettings();
+		await settingsStore.getModuleSettings();
+		// [CUSTOM-FORK] End License Activation
+
+		// Original activation code commented out - not needed for local full license
+		/*
 		const data = await usageApi.activateLicenseKey(rootStore.restApiContext, {
 			activationKey,
 			eulaUri,
@@ -89,6 +98,7 @@ export const useUsageStore = defineStore('usage', () => {
 		setData(data);
 		await settingsStore.getSettings();
 		await settingsStore.getModuleSettings();
+		*/
 	};
 
 	const refreshLicenseManagementToken = async () => {
@@ -104,8 +114,15 @@ export const useUsageStore = defineStore('usage', () => {
 		await usageApi.requestLicenseTrial(rootStore.restApiContext);
 	};
 
-	const registerCommunityEdition = async (email: string) =>
-		await usageApi.registerCommunityEdition(rootStore.restApiContext, { email });
+	const registerCommunityEdition = async (email: string) => {
+		// [CUSTOM-FORK] License Activation: Make registration a no-op - license already active locally
+		// License is auto-activated server-side, no registration needed
+		return;
+		// [CUSTOM-FORK] End License Activation
+
+		// Original registration code commented out - not needed for local full license
+		// return await usageApi.registerCommunityEdition(rootStore.restApiContext, { email });
+	};
 
 	return {
 		setLoading,

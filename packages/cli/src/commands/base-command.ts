@@ -499,11 +499,19 @@ export abstract class BaseCommand<F = never> {
 	}
 
 	async initLicense(): Promise<void> {
+		// [CUSTOM-FORK] License Activation: Auto-activate full license on service startup
 		this.license = Container.get(License);
-		await this.license.init();
+		await this.license.init(); // This will automatically activate local full license
 
 		Container.get(LicenseState).setLicenseProvider(this.license);
 
+		// License is automatically activated with Enterprise plan in license.ts init()
+		// No activation key needed - local full license is always active
+		this.logger.info('License initialized with Enterprise plan (auto-activated)');
+		// [CUSTOM-FORK] End License Activation
+
+		// Original activation key logic commented out - not needed for local full license
+		/*
 		const { activationKey } = this.globalConfig.license;
 
 		if (activationKey) {
@@ -522,6 +530,7 @@ export abstract class BaseCommand<F = never> {
 				this.logger.error('Could not activate license', { error });
 			}
 		}
+		*/
 	}
 
 	initWorkflowHistory() {

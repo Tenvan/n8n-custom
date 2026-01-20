@@ -6,11 +6,13 @@ import { WorkflowRepository } from '@n8n/db';
 import { Service } from '@n8n/di';
 import { ensureError } from '@n8n/utils/errors/ensure-error';
 
-import { BadRequestError } from '@/errors/response-errors/bad-request.error';
-import { LicenseEulaRequiredError } from '@/errors/response-errors/license-eula-required.error';
+// [CUSTOM-FORK] License Activation: Unused imports - external activation code commented out
+// import { BadRequestError } from '@/errors/response-errors/bad-request.error';
+// import { LicenseEulaRequiredError } from '@/errors/response-errors/license-eula-required.error';
 import { EventService } from '@/events/event.service';
 import { License } from '@/license';
-import { UrlService } from '@/services/url.service';
+// import { UrlService } from '@/services/url.service'; // [CUSTOM-FORK] License Activation: Unused - external HTTP calls removed
+// [CUSTOM-FORK] End License Activation
 
 const REQUEST_TIMEOUT_MS = 30 * Time.seconds.toMilliseconds;
 
@@ -32,7 +34,7 @@ export class LicenseService {
 		private readonly license: License,
 		private readonly licenseState: LicenseState,
 		private readonly workflowRepository: WorkflowRepository,
-		private readonly urlService: UrlService,
+		// private readonly urlService: UrlService, // [CUSTOM-FORK] License Activation: Unused - external HTTP calls removed
 		private readonly eventService: EventService,
 		outboundHttp: OutboundHttp,
 	) {
@@ -67,27 +69,19 @@ export class LicenseService {
 		};
 	}
 
-	async requestEnterpriseTrial(user: User) {
-		await this.http.request({
-			url: 'https://enterprise.n8n.io/enterprise-trial',
-			method: 'POST',
-			body: {
-				licenseType: 'enterprise',
-				firstName: user.firstName,
-				lastName: user.lastName,
-				email: user.email,
-				instanceUrl: this.urlService.getWebhookBaseUrl(),
-			},
-			json: true,
-		});
+	// [CUSTOM-FORK] License Activation: No-op statt externem Trial-Request — die Lizenz
+	// ist lokal bereits aktiv. Original-Implementierung siehe master.
+	async requestEnterpriseTrial(_user: User) {
+		this.logger.debug('Enterprise trial request skipped - local full license already active');
 	}
+	// [CUSTOM-FORK] End License Activation
 
 	async registerCommunityEdition({
-		userId,
-		email,
-		instanceId,
-		instanceUrl,
-		licenseType,
+		// userId, // [CUSTOM-FORK] License Activation: Unused - external HTTP calls removed
+		// email, // [CUSTOM-FORK] License Activation: Unused - external HTTP calls removed
+		// instanceId, // [CUSTOM-FORK] License Activation: Unused - external HTTP calls removed
+		// instanceUrl, // [CUSTOM-FORK] License Activation: Unused - external HTTP calls removed
+		// licenseType, // [CUSTOM-FORK] License Activation: Unused - external HTTP calls removed
 	}: {
 		userId: User['id'];
 		email: string;
@@ -95,6 +89,18 @@ export class LicenseService {
 		instanceUrl: string;
 		licenseType: string;
 	}): Promise<{ title: string; text: string }> {
+		// [CUSTOM-FORK] License Activation: Skip external registration - return local success response
+		// No external HTTP call to enterprise.n8n.io - license already active locally
+		this.logger.debug('Community edition registration skipped - local full license already active');
+		// Return mock success response without external server call
+		return {
+			title: 'Registration successful',
+			text: 'Your instance is already running with Enterprise license.',
+		};
+		// [CUSTOM-FORK] End License Activation
+
+		// Original code commented out to prevent external server calls
+		/*
 		try {
 			const { licenseKey, ...rest } = await this.http.request<{
 				title: string;
@@ -123,6 +129,7 @@ export class LicenseService {
 				throw new BadRequestError('Failed to register community edition');
 			}
 		}
+		*/
 	}
 
 	getManagementJwt(): string {
@@ -134,10 +141,19 @@ export class LicenseService {
 	async activateLicense(activationKey: string, eulaUri: string, userEmail: string): Promise<void>;
 	// Implementation signature
 	async activateLicense(
-		activationKey: string,
-		eulaUri?: string,
-		userEmail?: string,
+		_activationKey: string, // [CUSTOM-FORK] License Activation: Unused - activation is no-op
+		_eulaUri?: string, // [CUSTOM-FORK] License Activation: Unused - activation is no-op
+		_userEmail?: string, // [CUSTOM-FORK] License Activation: Unused - activation is no-op
 	): Promise<void> {
+		// [CUSTOM-FORK] License Activation: Skip external activation - license already active locally
+		// License is already activated locally with full Enterprise plan
+		// No external server calls needed
+		this.logger.debug('License activation skipped - local full license already active');
+		return;
+		// [CUSTOM-FORK] End License Activation
+
+		// Original activation code commented out to prevent external server calls
+		/*
 		try {
 			if (eulaUri && userEmail) {
 				await this.license.activate(activationKey, eulaUri, userEmail);
@@ -157,6 +173,7 @@ export class LicenseService {
 			const message = this.mapErrorMessage(ensureError(e), 'activate');
 			throw new BadRequestError(message);
 		}
+		*/
 	}
 
 	private isEulaRequiredError(
@@ -178,6 +195,15 @@ export class LicenseService {
 	}
 
 	async renewLicense() {
+		// [CUSTOM-FORK] License Activation: Skip renewal - local license never expires
+		// Local full license never expires, no renewal needed
+		this.logger.debug('License renewal skipped - local full license never expires');
+		this.eventService.emit('license-renewal-attempted', { success: true });
+		return;
+		// [CUSTOM-FORK] End License Activation
+
+		// Original renewal code commented out to prevent external server calls
+		/*
 		if (this.license.getPlanName() === 'Community') return; // unlicensed, nothing to renew
 
 		try {
@@ -190,6 +216,7 @@ export class LicenseService {
 		}
 
 		this.eventService.emit('license-renewal-attempted', { success: true });
+		*/
 	}
 
 	private mapErrorMessage(error: Error, action: 'activate' | 'renew') {

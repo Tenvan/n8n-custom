@@ -5,7 +5,7 @@ import {
 	DEFAULT_WORKFLOW_HISTORY_PRUNE_LIMIT,
 	LICENSE_FEATURES,
 	LICENSE_QUOTAS,
-	Time,
+	// Time, // [CUSTOM-FORK] License Activation: Unused - LicenseManager SDK initialization commented out
 	UNLIMITED_LICENSE_QUOTA,
 	type BooleanLicenseFeature,
 	type NumericLicenseFeature,
@@ -17,12 +17,15 @@ import type { TEntitlement, TLicenseBlock } from '@n8n_io/license-sdk';
 import { LicenseManager } from '@n8n_io/license-sdk';
 import { InstanceSettings } from 'n8n-core';
 
-import { LicenseMetricsService } from '@/metrics/license-metrics.service';
+// import { LicenseMetricsService } from '@/metrics/license-metrics.service'; // [CUSTOM-FORK] License Activation: Unused - LicenseManager SDK initialization commented out
 
-import { N8N_VERSION, SETTINGS_LICENSE_CERT_KEY } from './constants';
+import { SETTINGS_LICENSE_CERT_KEY } from './constants';
+// import { N8N_VERSION } from './constants'; // [CUSTOM-FORK] License Activation: Unused - LicenseManager SDK initialization commented out
 
-const LICENSE_RENEWAL_DISABLED_WARNING =
-	'Automatic license renewal is disabled. The license will not renew automatically, and access to licensed features may be lost!';
+// [CUSTOM-FORK] License Activation: Unused - LicenseManager SDK initialization commented out
+// const LICENSE_RENEWAL_DISABLED_WARNING =
+// 	'Automatic license renewal is disabled. The license will not renew automatically, and access to licensed features may be lost!';
+// [CUSTOM-FORK] End License Activation
 
 /** The license server rejects device fingerprints shorter than this. */
 const MIN_DEVICE_FINGERPRINT_LENGTH = 32;
@@ -44,12 +47,16 @@ export class License implements LicenseProvider {
 	private refreshCallbacks: LicenseRefreshCallback[] = [];
 
 	private hasWarnedShortDeviceFingerprint = false;
+	// [CUSTOM-FORK] License Activation: Local full license activation flag
+	private localFullLicenseActive = false;
+	private localPlanName = 'Enterprise';
+	// [CUSTOM-FORK] End License Activation
 
 	constructor(
 		private readonly logger: Logger,
 		private readonly instanceSettings: InstanceSettings,
 		private readonly settingsRepository: SettingsRepository,
-		private readonly licenseMetricsService: LicenseMetricsService,
+		// private readonly licenseMetricsService: LicenseMetricsService, // [CUSTOM-FORK] License Activation: Unused - LicenseManager SDK initialization commented out
 		private readonly globalConfig: GlobalConfig,
 	) {
 		this.logger = this.logger.scoped('license');
@@ -57,10 +64,13 @@ export class License implements LicenseProvider {
 
 	async init({
 		forceRecreate = false,
-		isCli = false,
+		// isCli = false, // [CUSTOM-FORK] License Activation: Unused - LicenseManager SDK initialization commented out
 	}: { forceRecreate?: boolean; isCli?: boolean } = {}) {
-		if (this.manager && !forceRecreate) {
-			this.logger.warn('License manager already initialized or shutting down');
+		// [CUSTOM-FORK] License Activation: Bypass LicenseManager SDK initialization, activate local full license
+		// Skip LicenseManager SDK initialization to avoid external server calls
+		// Instead, activate local full license with Enterprise plan and all features enabled
+		if (this.localFullLicenseActive && !forceRecreate) {
+			this.logger.debug('Local full license already active');
 			return;
 		}
 		if (this.isShuttingDown) {
@@ -68,6 +78,14 @@ export class License implements LicenseProvider {
 			return;
 		}
 
+		// Activate local full license - bypass LicenseManager SDK completely
+		this.localFullLicenseActive = true;
+		this.localPlanName = 'Enterprise';
+		this.logger.info('Local full license activated: Enterprise plan with all features enabled');
+		// [CUSTOM-FORK] End License Activation
+
+		// Original LicenseManager SDK initialization code commented out to prevent external server calls
+		/*
 		const { instanceType } = this.instanceSettings;
 		const isMainInstance = instanceType === 'main';
 		const server = this.globalConfig.license.serverUrl;
@@ -132,6 +150,7 @@ export class License implements LicenseProvider {
 				this.logger.error('Could not initialize license manager sdk', { error });
 			}
 		}
+		*/
 	}
 
 	/**
@@ -225,15 +244,26 @@ export class License implements LicenseProvider {
 		}
 	}
 
-	async activate(activationKey: string): Promise<void>;
-	async activate(activationKey: string, eulaUri: string, userEmail: string): Promise<void>;
-	async activate(activationKey: string, eulaUri?: string, userEmail?: string): Promise<void> {
+	async activate(_activationKey: string): Promise<void>; // [CUSTOM-FORK] License Activation: Unused param - activation is no-op
+	async activate(_activationKey: string, _eulaUri: string, _userEmail: string): Promise<void>; // [CUSTOM-FORK] License Activation: Unused params - activation is no-op
+	async activate(_activationKey: string, _eulaUri?: string, _userEmail?: string): Promise<void> {
+		// [CUSTOM-FORK] License Activation: Unused params - activation is no-op
+		// [CUSTOM-FORK] License Activation: Skip external activation, license already active locally
+		// License is already activated locally with full Enterprise plan
+		// No external server calls needed
+		this.logger.debug('License activation skipped - local full license already active');
+		return;
+		// [CUSTOM-FORK] End License Activation
+
+		// Original activation code commented out to prevent external server calls
+		/*
 		if (!this.manager) {
 			return;
 		}
 
 		await this.manager.activate(activationKey, { eulaUri, email: userEmail });
 		this.logger.debug('License activated');
+		*/
 	}
 
 	@OnPubSubEvent('reload-license')
@@ -252,6 +282,12 @@ export class License implements LicenseProvider {
 	}
 
 	async renew() {
+		// [CUSTOM-FORK] License Activation: Skip renewal - local license never expires
+		if (this.localFullLicenseActive) {
+			this.logger.debug('License renewal skipped - local full license never expires');
+			return;
+		}
+		// [CUSTOM-FORK] End License Activation
 		if (!this.manager) {
 			return;
 		}
@@ -271,10 +307,16 @@ export class License implements LicenseProvider {
 
 	@OnShutdown()
 	async shutdown() {
+		// [CUSTOM-FORK] License Activation: Skip SDK shutdown for local license
+		this.isShuttingDown = true;
+		if (this.localFullLicenseActive) {
+			this.logger.debug('Local license shutdown - no external cleanup needed');
+			return;
+		}
+		// [CUSTOM-FORK] End License Activation
+
 		// Shut down License manager to unclaim any floating entitlements
 		// Note: While this saves a new license cert to DB, the previous entitlements are still kept in memory so that the shutdown process can complete
-		this.isShuttingDown = true;
-
 		if (!this.manager) {
 			return;
 		}
@@ -284,6 +326,16 @@ export class License implements LicenseProvider {
 	}
 
 	isLicensed(feature: BooleanLicenseFeature) {
+		// [CUSTOM-FORK] License Activation: Return true for all features when local full license is active
+		// Exception: SHOW_NON_PROD_BANNER should be false for Enterprise license
+		if (this.localFullLicenseActive) {
+			// Don't show non-production banner for Enterprise license
+			if (feature === LICENSE_FEATURES.SHOW_NON_PROD_BANNER) {
+				return false;
+			}
+			return true;
+		}
+		// [CUSTOM-FORK] End License Activation
 		return this.manager?.hasFeatureEnabled(feature) ?? false;
 	}
 
@@ -415,6 +467,21 @@ export class License implements LicenseProvider {
 	}
 
 	getValue<T extends keyof FeatureReturnType>(feature: T): FeatureReturnType[T] {
+		// [CUSTOM-FORK] License Activation: Return Enterprise plan and unlimited quotas when local full license is active
+		if (this.localFullLicenseActive) {
+			if (feature === 'planName') {
+				return this.localPlanName as FeatureReturnType[T];
+			}
+			// Return unlimited for all quota features
+			if (Object.values(LICENSE_QUOTAS).includes(feature as NumericLicenseFeature)) {
+				return UNLIMITED_LICENSE_QUOTA as FeatureReturnType[T];
+			}
+			// Return true for all boolean features
+			if (Object.values(LICENSE_FEATURES).includes(feature as BooleanLicenseFeature)) {
+				return true as FeatureReturnType[T];
+			}
+		}
+		// [CUSTOM-FORK] End License Activation
 		return this.manager?.getFeatureValue(feature) as FeatureReturnType[T];
 	}
 
@@ -446,6 +513,11 @@ export class License implements LicenseProvider {
 	}
 
 	getConsumerId() {
+		// [CUSTOM-FORK] License Activation: Return local consumer ID when local full license is active
+		if (this.localFullLicenseActive) {
+			return this.instanceSettings.instanceId;
+		}
+		// [CUSTOM-FORK] End License Activation
 		return this.manager?.getConsumerId() ?? 'unknown';
 	}
 
@@ -468,6 +540,11 @@ export class License implements LicenseProvider {
 
 	/** @deprecated Use `LicenseState` instead. */
 	getAiCredits() {
+		// [CUSTOM-FORK] License Activation: Return unlimited AI credits when local full license is active
+		if (this.localFullLicenseActive) {
+			return UNLIMITED_LICENSE_QUOTA;
+		}
+		// [CUSTOM-FORK] End License Activation
 		return this.getValue(LICENSE_QUOTAS.AI_CREDITS) ?? 0;
 	}
 
@@ -481,10 +558,20 @@ export class License implements LicenseProvider {
 
 	/** @deprecated Use `LicenseState` instead. */
 	getTeamProjectLimit() {
+		// [CUSTOM-FORK] License Activation: Return unlimited team projects when local full license is active
+		if (this.localFullLicenseActive) {
+			return UNLIMITED_LICENSE_QUOTA;
+		}
+		// [CUSTOM-FORK] End License Activation
 		return this.getValue(LICENSE_QUOTAS.TEAM_PROJECT_LIMIT) ?? 0;
 	}
 
 	getPlanName(): string {
+		// [CUSTOM-FORK] License Activation: Return Enterprise plan when local full license is active
+		if (this.localFullLicenseActive) {
+			return this.localPlanName;
+		}
+		// [CUSTOM-FORK] End License Activation
 		return this.getValue('planName') ?? 'Community';
 	}
 

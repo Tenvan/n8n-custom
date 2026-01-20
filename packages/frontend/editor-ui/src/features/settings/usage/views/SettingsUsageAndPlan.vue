@@ -54,9 +54,15 @@ const activationKeyInput = ref<HTMLInputElement | null>(null);
 const eulaModal = ref(false);
 const eulaUrl = ref('');
 
-const canUserActivateLicense = computed(() =>
-	hasPermission(['rbac'], { rbac: { scope: 'license:manage' } }),
-);
+// [CUSTOM-FORK] License Activation: Hide activation UI when Enterprise plan is already active
+const canUserActivateLicense = computed(() => {
+	// Don't show activation button if already on Enterprise plan
+	if (usageStore.planName.toLowerCase() === 'enterprise') {
+		return false;
+	}
+	return hasPermission(['rbac'], { rbac: { scope: 'license:manage' } });
+});
+// [CUSTOM-FORK] End License Activation
 
 const badgedPlanName = computed(() => {
 	const [badge, name] = usageStore.planName.split(' ');
@@ -146,6 +152,9 @@ const onActivationModalClose = () => {
 onMounted(async () => {
 	documentTitle.set(locale.baseText('settings.usageAndPlan.title'));
 	usageStore.setLoading(true);
+	// [CUSTOM-FORK] License Activation: Skip query param activation - license already active locally
+	// Remove query param activation logic since license is auto-activated
+	/*
 	if (route.query.key) {
 		try {
 			await usageStore.activateLicense(route.query.key as string);
@@ -157,12 +166,11 @@ onMounted(async () => {
 			showActivationError(error);
 		}
 	}
+	*/
+	// [CUSTOM-FORK] End License Activation
 	try {
-		if (!route.query.key && canUserActivateLicense.value) {
-			await usageStore.refreshLicenseManagementToken();
-		} else {
-			await usageStore.getLicenseInfo();
-		}
+		// Always get license info - activation is handled server-side
+		await usageStore.getLicenseInfo();
 		usageStore.setLoading(false);
 	} catch (error) {
 		if (!error.name) {
@@ -173,14 +181,26 @@ onMounted(async () => {
 });
 
 const sendUsageTelemetry = (action: UsageTelemetry['action']) => {
+	// [CUSTOM-FORK] License Activation: Disable telemetry calls
+	// Telemetry disabled for custom fork
+	return;
+	// [CUSTOM-FORK] End License Activation
+	/*
 	const telemetryPayload = usageStore.telemetryPayload;
 	telemetryPayload.action = action;
 	telemetry.track('User clicked button on usage page', telemetryPayload);
+	*/
 };
 
 const onAddActivationKey = () => {
+	// [CUSTOM-FORK] License Activation: Skip activation modal - license already active
+	// Activation is handled automatically server-side
+	return;
+	// [CUSTOM-FORK] End License Activation
+	/*
 	activationKeyModal.value = true;
 	sendUsageTelemetry('add_activation_key');
+	*/
 };
 
 const onViewPlans = () => {
