@@ -1,9 +1,8 @@
 <script setup lang="ts">
-import { N8nLogo } from '@n8n/design-system';
 import SSOLogin from '@/features/settings/sso/components/SSOLogin.vue';
 import type { FormFieldValueUpdate, IFormBoxConfig } from '@/Interface';
-import { useSettingsStore } from '@n8n/stores/settings.store';
 import type { EmailOrLdapLoginIdAndPassword } from './SigninView.vue';
+import OrgaMaxLogo from '@/app/components/OrgaMaxLogo.vue';
 
 import { N8nFormBox, N8nText } from '@n8n/design-system';
 withDefaults(
@@ -36,15 +35,13 @@ const onSubmit = (data: unknown) => {
 const onSecondaryClick = () => {
 	emit('secondaryClick');
 };
-
-const {
-	settings: { releaseChannel },
-} = useSettingsStore();
 </script>
 
 <template>
 	<div :class="$style.container">
-		<N8nLogo size="large" :release-channel="releaseChannel" />
+		<!-- [CUSTOM-FORK] License Activation: Use OrgaMax Logo instead of n8n Logo -->
+		<OrgaMaxLogo size="large" />
+		<!-- [CUSTOM-FORK] End License Activation -->
 		<div v-if="subtitle" :class="$style.textContainer">
 			<N8nText size="large">{{ subtitle }}</N8nText>
 		</div>

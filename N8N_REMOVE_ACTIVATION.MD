@@ -7,25 +7,30 @@
 Es gibt zwei mögliche Ansätze:
 
 ### Strategie 1: Entfernung aller Lizenzabfragen
+
 Vollständige Entfernung aller Lizenzprüfungen und Aktivierung aller Features ohne Lizenzprüfung.
 
 ### Strategie 2: Automatische Aktivierung mit Volllizenz (Empfohlen)
+
 Statt der Entfernung aller Lizenzabfragen kann der Service automatisch mit einer Volllizenz starten. Der feste User aus [N8N_FIXED_USER_LOGIN.MD](N8N_FIXED_USER_LOGIN.MD) (`deltra@orgamax.de`) wird automatisch mit einer vollen Lizenz aktiviert, bzw. der Service startet automatisch mit einer Volllizenz als Default.
 
 **WICHTIG: Vollständig lokal, keine externen Server-Abhängigkeiten**
 
 Strategie 2 bedeutet **NICHT**, dass externe Lizenz-Server verwendet werden. Stattdessen:
+
 - ✅ **Lokal bleiben:** Die Code-Struktur (License-Klassen, Interfaces, Feature-Checks)
 - ❌ **Entfernt werden:** Alle externen Server-Kommunikationen (`license.n8n.io`, `enterprise.n8n.io`)
 - ✅ **Ersetzt werden:** LicenseManager SDK durch lokale Simulation einer Volllizenz
 
 **Was lokal bleibt (Code-Struktur):**
+
 - License-Klassen und Interfaces (`License`, `LicenseService`, `LicenseController`)
 - Feature-Check-Logik (`@Licensed()` Decorators, Feature-Flags)
 - Plan-Name-Logik (Enterprise/Pro/Community)
 - Quota-Management-Struktur
 
 **Was entfernt/ersetzt werden muss (externe Abhängigkeiten):**
+
 - ❌ Kommunikation mit `https://license.n8n.io/v1` → Lokale Simulation
 - ❌ Kommunikation mit `https://enterprise.n8n.io` → Lokale Mock-Response
 - ❌ LicenseManager SDK Initialisierung mit Server-URL → Lokale Volllizenz-Konfiguration
@@ -33,6 +38,7 @@ Strategie 2 bedeutet **NICHT**, dass externe Lizenz-Server verwendet werden. Sta
 - ❌ Externe HTTP-Calls für Aktivierung/Registrierung → Lokale No-Op oder Mock
 
 **Vorteile von Strategie 2:**
+
 - Beibehaltung der bestehenden Code-Struktur (weniger Refactoring)
 - Weniger Code-Änderungen erforderlich als bei Strategie 1
 - Einfacheres Rollback möglich
@@ -40,6 +46,7 @@ Strategie 2 bedeutet **NICHT**, dass externe Lizenz-Server verwendet werden. Sta
 - **Vollständig offline-fähig, keine Internet-Abhängigkeit**
 
 **Umsetzungsrichtlinien:**
+
 - Umsetzung soll mit möglichst wenig Code erfolgen, nur Deaktivierung ohne Entfernung alten Codes
 - Wenn nötig - dann aber gezielt nachfragen - neues eigene Dateien erstellen, wenn massive Änderungen nötig sind
 - Bei Strategie 1: Entfernung aller Einschränkungen nach Lizenz, gleichzeitige Aktivierung aller Features
@@ -48,6 +55,7 @@ Strategie 2 bedeutet **NICHT**, dass externe Lizenz-Server verwendet werden. Sta
 - **WICHTIG:** Alle geänderten Stellen müssen mit einer eindeutigen Markierung in Form von Kommentaren gekennzeichnet werden
 
 **Beispiel für Kommentar-Markierung:**
+
 ```typescript
 // [CUSTOM-FORK] License Activation: Auto-activate with full license locally
 async activateLicense(activationKey: string, eulaUri?: string, userEmail?: string) {
@@ -59,6 +67,7 @@ async activateLicense(activationKey: string, eulaUri?: string, userEmail?: strin
 ```
 
 Source control info:
+
 - Workspace branch: `feature/n8n-custom`
 - Workspace commit: `91ba70c8a065cc42c1dd8570ea439daaf1edd772`
 - `apps/n8n` submodule: `a5865b4a0c65986005a761d5bc371376b2baf92e` (heads/develop)
@@ -72,9 +81,11 @@ Der Service startet automatisch mit einer Volllizenz, ohne dass eine manuelle Ak
 **Wichtige Dateien für Ansatz A:**
 
 #### license.ts (License provider)
+
 **File Path:** `apps/n8n/packages/cli/src/license.ts`
 
 **Proposed Patch/Change:**
+
 - **WICHTIG:** Keine Initialisierung des LicenseManager SDK mit externer Server-URL (`https://license.n8n.io/v1`)
 - Stattdessen: Erstelle eine lokale Mock-Implementierung oder umgehe das SDK komplett
 - Setze `planName` direkt auf Enterprise/Pro mit allen Features aktiviert
@@ -83,18 +94,22 @@ Der Service startet automatisch mit einer Volllizenz, ohne dass eine manuelle Ak
 - Deaktiviere Auto-Renewal komplett (keine periodischen Server-Calls)
 
 #### base-command.ts (auto-activation via env)
+
 **File Path:** `apps/n8n/packages/cli/src/commands/base-command.ts`
 
 **Proposed Patch/Change:**
+
 - Statt Auto-Aktivierung zu entfernen, setze automatisch eine lokale Volllizenz beim Start
 - **WICHTIG:** Keine Kommunikation mit externen Servern - alles lokal hardcodiert
 - Initialisiere eine lokale Mock-Lizenz-Konfiguration ohne LicenseManager SDK
 - Oder: Umgehe das LicenseManager SDK komplett und setze die Lizenz-Daten direkt
 
 #### Frontend settings propagation (license gating)
+
 **File Path:** `apps/n8n/packages/cli/src/services/frontend.service.ts`
 
 **Proposed Patch/Change:**
+
 - Setze `planName` auf Enterprise/Pro statt Community
 - Setze alle Feature-Flags auf aktiviert
 - Setze unlimited quotas für alle Ressourcen
@@ -106,17 +121,21 @@ Der feste User (`deltra@orgamax.de` aus `N8N_FIXED_USER_LOGIN.MD`) wird automati
 **Wichtige Dateien für Ansatz B:**
 
 #### auth.service.ts (Integration mit License Service)
+
 **File Path:** `apps/n8n/packages/cli/src/auth/auth.service.ts`
 
 **Proposed Patch/Change:**
+
 - Nach erfolgreicher Authentifizierung des festen Users, prüfe ob Lizenz aktiviert ist
 - Falls nicht aktiviert, aktiviere automatisch eine Volllizenz für diesen User
 - Verknüpfe die Authentifizierung mit der automatischen Lizenzaktivierung
 
 #### license.service.ts
+
 **File Path:** `apps/n8n/packages/cli/src/license/license.service.ts`
 
 **Proposed Patch/Change:**
+
 - Erweitere `activateLicense` um eine Methode zur automatischen Aktivierung mit Volllizenz
 - Diese Methode wird vom Auth-Service aufgerufen, wenn der feste User sich einloggt
 - **WICHTIG:** Keine externen HTTP-Calls - alles lokal ohne Server-Kommunikation
@@ -128,12 +147,14 @@ Der feste User (`deltra@orgamax.de` aus `N8N_FIXED_USER_LOGIN.MD`) wird automati
 **Empfehlung:** Ansatz A (Automatische Aktivierung beim Service-Start)
 
 **Begründung:**
+
 - Einfacher zu implementieren
 - Keine Abhängigkeit vom Login-Flow
 - Service ist sofort nach Start vollständig funktionsfähig
 - Weniger Code-Änderungen erforderlich
 
 **Implementierungsschritte:**
+
 1. Modifiziere `license.ts` um beim Initialisieren automatisch eine lokale Volllizenz zu setzen
    - **WICHTIG:** Umgehe `LicenseManager` SDK Initialisierung mit Server-URL
    - Erstelle lokale Mock-Implementierung oder setze Werte direkt
@@ -151,9 +172,11 @@ Der feste User (`deltra@orgamax.de` aus `N8N_FIXED_USER_LOGIN.MD`) wird automati
 ## UI Elements
 
 ### SettingsUsageAndPlan.vue
+
 **File Path:** `apps/n8n/packages/frontend/editor-ui/src/features/settings/usage/views/SettingsUsageAndPlan.vue`
 
 **Code Snippet:**
+
 ```
 const onLicenseActivation = async (eulaUri?: string) => {
   await usageStore.activateLicense(activationKey.value.trim(), eulaUri?.trim());
@@ -180,9 +203,11 @@ const onAddActivationKey = () => {
 ---
 
 ### EulaAcceptanceModal.vue
+
 **File Path:** `apps/n8n/packages/frontend/editor-ui/src/features/settings/usage/components/EulaAcceptanceModal.vue`
 
 **Code Snippet:**
+
 ```
 <N8nCheckbox v-model="accepted" data-test-id="eula-checkbox">
   <template #label>
@@ -202,9 +227,11 @@ const onAddActivationKey = () => {
 ---
 
 ### CommunityPlusEnrollmentModal.vue
+
 **File Path:** `apps/n8n/packages/frontend/editor-ui/src/features/settings/usage/components/CommunityPlusEnrollmentModal.vue`
 
 **Code Snippet:**
+
 ```
 const closeModal = () => {
   telemetry.track('User skipped community plus');
@@ -224,9 +251,11 @@ const confirm = async () => {
 ---
 
 ### usage.constants.ts
+
 **File Path:** `apps/n8n/packages/frontend/editor-ui/src/features/settings/usage/usage.constants.ts`
 
 **Code Snippet:**
+
 ```
 export const COMMUNITY_PLUS_DOCS_URL =
   'https://docs.n8n.io/hosting/community-edition-features/#registered-community-edition';
@@ -241,9 +270,11 @@ export const COMMUNITY_PLUS_DOCS_URL =
 ---
 
 ### RBAC scopes for activation and registration
+
 **File Path:** `apps/n8n/packages/@n8n/permissions/src/roles/scopes/global-scopes.ee.ts`
 
 **Code Snippet:**
+
 ```
 'community:register',
 'license:manage',
@@ -258,9 +289,11 @@ export const COMMUNITY_PLUS_DOCS_URL =
 ## API Endpoints (Frontend Client)
 
 ### usage API client
+
 **File Path:** `apps/n8n/packages/frontend/@n8n/rest-api-client/src/api/usage.ts`
 
 **Code Snippet:**
+
 ```
 export const activateLicenseKey = async (context, data) =>
   await makeRestApiRequest(context, 'POST', '/license/activate', data);
@@ -278,9 +311,11 @@ export const renewLicense = async (context) =>
 ---
 
 ### usage.store.ts
+
 **File Path:** `apps/n8n/packages/frontend/editor-ui/src/features/settings/usage/usage.store.ts`
 
 **Code Snippet:**
+
 ```
 const activateLicense = async (activationKey: string, eulaUri?: string) => {
   const data = await usageApi.activateLicenseKey(rootStore.restApiContext, {
@@ -302,9 +337,11 @@ const activateLicense = async (activationKey: string, eulaUri?: string) => {
 ---
 
 ### settings.store.ts (telemetry session start)
+
 **File Path:** `apps/n8n/packages/frontend/editor-ui/src/app/stores/settings.store.ts`
 
 **Code Snippet:**
+
 ```
 if (fetchedSettings.telemetry.enabled) {
   void eventsApi.sessionStarted(rootStore.restApiContext);
@@ -320,9 +357,11 @@ if (fetchedSettings.telemetry.enabled) {
 ## API Endpoints (Backend)
 
 ### license.controller.ts
+
 **File Path:** `apps/n8n/packages/cli/src/license/license.controller.ts`
 
 **Code Snippet:**
+
 ```
 @Post('/activate')
 @GlobalScope('license:manage')
@@ -341,9 +380,11 @@ async activateLicense(req: LicenseRequest.Activate) {
 ---
 
 ### requests.ts (License DTO)
+
 **File Path:** `apps/n8n/packages/cli/src/requests.ts`
 
 **Code Snippet:**
+
 ```
 export declare namespace LicenseRequest {
   type Activate = AuthenticatedRequest<{}, {}, { activationKey: string; eulaUri?: string }, {}>;
@@ -359,9 +400,11 @@ export declare namespace LicenseRequest {
 ## Activation Logic (Backend)
 
 ### license.service.ts
+
 **File Path:** `apps/n8n/packages/cli/src/license/license.service.ts`
 
 **Code Snippet:**
+
 ```
 async activateLicense(activationKey: string, eulaUri?: string, userEmail?: string) {
   await this.license.activate(activationKey, eulaUri, userEmail);
@@ -379,6 +422,7 @@ async registerCommunityEdition({ email, instanceId, instanceUrl, licenseType }) 
 **Source Control Information:** `apps/n8n` submodule `a5865b4a0c65986005a761d5bc371376b2baf92e` (heads/develop)
 
 **Proposed Patch/Change:**
+
 - **Strategie 1:** Stub `activateLicense` and `registerCommunityEdition` to avoid external HTTP, return local success and set Community plan.
 - **Strategie 2:** Implementiere automatische Aktivierung mit Volllizenz - entweder beim Service-Start oder beim Login des festen Users (`deltra@orgamax.de`). Setze Enterprise/Pro plan mit allen Features aktiviert und unlimited quotas.
   - **WICHTIG:** `registerCommunityEdition` muss lokal sein - entferne `axios.post('https://enterprise.n8n.io/community-registered')` komplett
@@ -387,9 +431,11 @@ async registerCommunityEdition({ email, instanceId, instanceUrl, licenseType }) 
 ---
 
 ### license.ts (License provider)
+
 **File Path:** `apps/n8n/packages/cli/src/license.ts`
 
 **Code Snippet:**
+
 ```
 this.manager = new LicenseManager({
   server: this.globalConfig.license.serverUrl,
@@ -405,6 +451,7 @@ await this.manager.initialize();
 **Source Control Information:** `apps/n8n` submodule `a5865b4a0c65986005a761d5bc371376b2baf92e` (heads/develop)
 
 **Proposed Patch/Change:**
+
 - **Strategie 1:** Skip SDK init (return early), or force local Community plan with unlimited quotas.
 - **Strategie 2:** **Umgehe LicenseManager SDK Initialisierung komplett** - initialisiere NICHT mit `server: 'https://license.n8n.io/v1'`. Stattdessen:
   - Erstelle lokale Mock-Implementierung oder setze Werte direkt ohne SDK
@@ -415,9 +462,11 @@ await this.manager.initialize();
 ---
 
 ### base-command.ts (auto-activation via env)
+
 **File Path:** `apps/n8n/packages/cli/src/commands/base-command.ts`
 
 **Code Snippet:**
+
 ```
 const { activationKey } = this.globalConfig.license;
 if (activationKey) {
@@ -431,6 +480,7 @@ if (activationKey) {
 **Source Control Information:** `apps/n8n` submodule `a5865b4a0c65986005a761d5bc371376b2baf92e` (heads/develop)
 
 **Proposed Patch/Change:**
+
 - **Strategie 1:** Remove this block or guard with explicit opt-in for internal forks.
 - **Strategie 2:** Statt Auto-Aktivierung zu entfernen, setze automatisch eine lokale Volllizenz beim Start.
   - **WICHTIG:** Keine Initialisierung des License Managers mit externer Server-URL
@@ -440,9 +490,11 @@ if (activationKey) {
 ---
 
 ### license.config.ts
+
 **File Path:** `apps/n8n/packages/@n8n/config/src/configs/license.config.ts`
 
 **Code Snippet:**
+
 ```
 @Env('N8N_LICENSE_SERVER_URL')
 serverUrl: string = 'https://license.n8n.io/v1';
@@ -457,9 +509,11 @@ serverUrl: string = 'https://license.n8n.io/v1';
 ---
 
 ### license-eula-required.error.ts
+
 **File Path:** `apps/n8n/packages/cli/src/errors/response-errors/license-eula-required.error.ts`
 
 **Code Snippet:**
+
 ```
 export class LicenseEulaRequiredError extends ResponseError {
   constructor(message: string, readonly meta: { eulaUrl: string }) {
@@ -477,9 +531,11 @@ export class LicenseEulaRequiredError extends ResponseError {
 ---
 
 ### Frontend settings propagation (license gating)
+
 **File Path:** `apps/n8n/packages/cli/src/services/frontend.service.ts`
 
 **Code Snippet:**
+
 ```
 const telemetrySettings: ITelemetrySettings = {
   enabled: this.globalConfig.diagnostics.enabled,
@@ -494,15 +550,18 @@ this.settings.license.consumerId = this.license.getConsumerId();
 **Source Control Information:** `apps/n8n` submodule `a5865b4a0c65986005a761d5bc371376b2baf92e` (heads/develop)
 
 **Proposed Patch/Change:**
+
 - **Strategie 1:** Force `telemetry.enabled` and `posthog.enabled` to `false`, and pin `planName` to `Community` with unlimited quotas.
 - **Strategie 2:** Force `telemetry.enabled` and `posthog.enabled` to `false`, and set `planName` to `Enterprise` or `Pro` with unlimited quotas and all features enabled. Die Lizenz wird automatisch beim Service-Start aktiviert.
 
 ## Tracking Mechanisms (Frontend)
 
 ### Telemetry plugin (frontend)
+
 **File Path:** `apps/n8n/packages/frontend/editor-ui/src/app/plugins/telemetry/index.ts`
 
 **Code Snippet:**
+
 ```
 if (!telemetrySettings.enabled || !telemetrySettings.config || this.rudderStack) return;
 
@@ -519,9 +578,11 @@ this.track('Session started', { session_id: rootStore.pushRef });
 ---
 
 ### PostHog store (frontend)
+
 **File Path:** `apps/n8n/packages/frontend/editor-ui/src/app/stores/posthog.store.ts`
 
 **Code Snippet:**
+
 ```
 const config = settingsStore.settings.posthog;
 if (!config.enabled) {
@@ -539,9 +600,11 @@ window.posthog?.init(config.apiKey, options);
 ---
 
 ### events API client (frontend)
+
 **File Path:** `apps/n8n/packages/frontend/@n8n/rest-api-client/src/api/events.ts`
 
 **Code Snippet:**
+
 ```
 export async function sessionStarted(context) {
   return await makeRestApiRequest(context, 'GET', '/events/session-started');
@@ -557,9 +620,11 @@ export async function sessionStarted(context) {
 ---
 
 ### Dynamic banners (frontend)
+
 **File Path:** `apps/n8n/packages/frontend/editor-ui/src/features/shared/banners/banners.store.ts`
 
 **Code Snippet:**
+
 ```
 await getDynamicBanners(settingsStore.settings.dynamicBanners.endpoint, {
   instanceId: settingsStore.settings.instanceId,
@@ -576,9 +641,11 @@ await getDynamicBanners(settingsStore.settings.dynamicBanners.endpoint, {
 ## Tracking Mechanisms (Backend)
 
 ### telemetry/index.ts (backend)
+
 **File Path:** `apps/n8n/packages/cli/src/telemetry/index.ts`
 
 **Code Snippet:**
+
 ```
 const { enabled, backendConfig } = this.globalConfig.diagnostics;
 if (enabled) {
@@ -597,9 +664,11 @@ if (enabled) {
 ---
 
 ### posthog/index.ts (backend)
+
 **File Path:** `apps/n8n/packages/cli/src/posthog/index.ts`
 
 **Code Snippet:**
+
 ```
 const { enabled, posthogConfig } = this.globalConfig.diagnostics;
 if (!enabled) {
@@ -617,9 +686,11 @@ this.postHog = new PostHog(posthogConfig.apiKey, { host: posthogConfig.apiHost }
 ---
 
 ### TelemetryEventRelay (backend)
+
 **File Path:** `apps/n8n/packages/cli/src/events/relays/telemetry.event-relay.ts`
 
 **Code Snippet:**
+
 ```
 private licenseRenewalAttempted({ success }) {
   this.telemetry.track('Instance attempted to refresh license', { success });
@@ -643,9 +714,11 @@ private licenseCommunityPlusRegistered({ userId, email, licenseKey }) {
 ---
 
 ### telemetry.controller.ts (backend proxy)
+
 **File Path:** `apps/n8n/packages/cli/src/controllers/telemetry.controller.ts`
 
 **Code Snippet:**
+
 ```
 @Post('/proxy/:version/track', { skipAuth: true })
 async track(req, res, next) {
@@ -662,9 +735,11 @@ async track(req, res, next) {
 ---
 
 ### posthog.controller.ts (backend proxy)
+
 **File Path:** `apps/n8n/packages/cli/src/controllers/posthog.controller.ts`
 
 **Code Snippet:**
+
 ```
 @Post('/capture/', { skipAuth: true })
 async capture(req, res, next) {
@@ -681,9 +756,11 @@ async capture(req, res, next) {
 ---
 
 ### events.controller.ts (backend)
+
 **File Path:** `apps/n8n/packages/cli/src/events/events.controller.ts`
 
 **Code Snippet:**
+
 ```
 @Get('/session-started')
 sessionStarted(req: AuthenticatedRequest) {
@@ -701,9 +778,11 @@ sessionStarted(req: AuthenticatedRequest) {
 ---
 
 ### diagnostics.config.ts
+
 **File Path:** `apps/n8n/packages/@n8n/config/src/configs/diagnostics.config.ts`
 
 **Code Snippet:**
+
 ```
 @Env('N8N_DIAGNOSTICS_ENABLED')
 enabled: boolean = true;
@@ -718,11 +797,13 @@ enabled: boolean = true;
 ## Activation/Registration Data Flow (Summary)
 
 ### Strategie 1: Entfernung aller Lizenzabfragen
+
 1) UI activation button in `SettingsUsageAndPlan.vue` wird ausgeblendet oder deaktiviert.
 2) Alle Lizenzprüfungen werden umgangen oder entfernt.
 3) Service läuft ohne Lizenzprüfungen mit allen Features aktiviert.
 
 ### Strategie 2: Automatische Aktivierung mit Volllizenz
+
 1) Beim Service-Start wird automatisch eine lokale Volllizenz aktiviert (oder beim Login des festen Users).
 2) `license.ts` initialisiert **ohne LicenseManager SDK** mit einer lokalen Volllizenz-Konfiguration.
 3) **Keine externen Server-Calls:** Alle Kommunikation mit `license.n8n.io` und `enterprise.n8n.io` wird entfernt.
@@ -731,6 +812,7 @@ enabled: boolean = true;
 6) UI activation button kann optional ausgeblendet werden, da bereits aktiviert.
 
 **Zu entfernende externe Abhängigkeiten:**
+
 - ❌ `https://license.n8n.io/v1` - LicenseManager SDK Server-URL
 - ❌ `https://enterprise.n8n.io/community-registered` - Community Registration Endpoint
 - ❌ Auto-Renewal-Versuche (periodische Server-Calls)
@@ -740,22 +822,28 @@ enabled: boolean = true;
 ## Strategie-Vergleich und Entscheidungshilfe
 
 ### Strategie 1: Entfernung aller Lizenzabfragen
+
 **Vorteile:**
+
 - Keine Abhängigkeit von Lizenz-Infrastruktur
 - Einfachste Lösung für vollständig unabhängigen Betrieb
 
 **Nachteile:**
+
 - Mehr Code-Änderungen erforderlich
 - Alle Lizenzprüfungen müssen entfernt/umgangen werden
 - Komplexeres Rollback bei Problemen
 - Mögliche Inkompatibilitäten bei n8n-Updates
 
 **Wann verwenden:**
+
 - Wenn vollständige Unabhängigkeit von Lizenz-System gewünscht ist
 - Wenn keine Kompatibilität mit bestehenden Lizenzprüfungen benötigt wird
 
 ### Strategie 2: Automatische Aktivierung mit Volllizenz (Empfohlen)
+
 **Vorteile:**
+
 - Weniger Code-Änderungen erforderlich als bei Strategie 1
 - Beibehaltung der bestehenden Code-Struktur (License-Klassen, Interfaces)
 - Einfacheres Rollback möglich
@@ -765,10 +853,12 @@ enabled: boolean = true;
 - **Keine externen Server-Abhängigkeiten** - alles lokal
 
 **Nachteile:**
+
 - Code-Struktur der Lizenz-Klassen bleibt bestehen (aber ohne externe Calls)
 - Lokale Mock-Implementierung erforderlich (aber einfacher als vollständige Entfernung)
 
 **Wann verwenden:**
+
 - Wenn minimale Code-Änderungen gewünscht sind
 - Wenn Kompatibilität mit bestehenden Lizenzprüfungen wichtig ist
 - Wenn einfaches Rollback wichtig ist
@@ -776,7 +866,9 @@ enabled: boolean = true;
 - **Empfohlen für die meisten Fälle**
 
 ### Empfehlung
+
 **Strategie 2 (Automatische Aktivierung mit Volllizenz)** wird empfohlen, da sie:
+
 - Mit weniger Code-Änderungen umsetzbar ist
 - Die bestehende Code-Struktur nutzt (aber ohne externe Server-Calls)
 - Einfacher zu warten und zu aktualisieren ist

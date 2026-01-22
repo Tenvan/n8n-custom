@@ -327,10 +327,16 @@ export class License implements LicenseProvider {
 
 	isLicensed(feature: BooleanLicenseFeature) {
 		// [CUSTOM-FORK] License Activation: Return true for all features when local full license is active
-		// Exception: SHOW_NON_PROD_BANNER should be false for Enterprise license
+		// Exceptions:
+		// - SHOW_NON_PROD_BANNER should be false for Enterprise license
+		// - API_DISABLED should be false to enable REST API
 		if (this.localFullLicenseActive) {
 			// Don't show non-production banner for Enterprise license
 			if (feature === LICENSE_FEATURES.SHOW_NON_PROD_BANNER) {
+				return false;
+			}
+			// Enable REST API by returning false for API_DISABLED feature
+			if (feature === LICENSE_FEATURES.API_DISABLED) {
 				return false;
 			}
 			return true;
