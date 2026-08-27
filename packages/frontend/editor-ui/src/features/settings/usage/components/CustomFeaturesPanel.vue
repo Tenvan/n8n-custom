@@ -1,6 +1,6 @@
 <script lang="ts" setup>
 import { computed } from 'vue';
-import { useSettingsStore } from '@/app/stores/settings.store';
+import { useSettingsStore } from '@n8n/stores/settings.store';
 import { useUsageStore } from '../usage.store';
 import { N8nHeading } from '@n8n/design-system';
 import OrgaMaxLogo from '@/app/components/OrgaMaxLogo.vue';
