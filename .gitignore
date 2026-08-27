@@ -95,3 +95,11 @@ stryker.log
 # Generated migration indexes (scripts/generate-migration-index.mjs)
 packages/@n8n/db/src/migrations/sqlite/index.ts
 packages/@n8n/db/src/migrations/postgresdb/index.ts
+
+# Deploy-Artefakte (scripts/deploy-packages.mjs)
+.deploy/
+install.log
+deploy.log
+
+# Serena MCP
+.serena/
