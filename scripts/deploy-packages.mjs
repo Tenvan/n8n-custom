@@ -69,7 +69,19 @@ async function assertBuilt() {
 async function backupManifests() {
 	const backups = new Map();
 	for (const file of TRIMMED_MANIFESTS) {
-		backups.set(file, await fs.readFile(file, 'utf8'));
+		const content = await fs.readFile(file, 'utf8');
+
+		// Ein hart abgebrochener Lauf (Ctrl+C, kill) ueberspringt den finally-Block und
+		// laesst die Manifeste getrimmt liegen. Wuerde der naechste Lauf diesen Zustand
+		// als Backup sichern, waere der Verlust dauerhaft.
+		if (!JSON.parse(content).scripts) {
+			echo(chalk.red(`FEHLER: ${path.relative(rootDir, file)} ist bereits getrimmt.`));
+			echo(chalk.red('Ein vorheriger Lauf wurde abgebrochen. Wiederherstellen mit:'));
+			echo(chalk.yellow(`  git restore ${TRIMMED_MANIFESTS.map((f) => path.relative(rootDir, f)).join(' ')}`));
+			process.exit(1);
+		}
+
+		backups.set(file, content);
 	}
 	return async () => {
 		for (const [file, content] of backups) await fs.writeFile(file, content, 'utf8');
