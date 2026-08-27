@@ -120,6 +120,11 @@ Das Skript (`scripts/deploy-packages.mjs`) arbeitet in dieser Reihenfolge:
 6. Die gesicherten Manifeste im `finally`-Block zurückrollen — auch wenn das
    Packen mittendrin abbricht.
 
+Wird der Lauf hart abgebrochen (Ctrl+C, Task-Kill), greift Schritt 6 nicht und
+die drei Manifeste bleiben getrimmt liegen. Der nächste Lauf erkennt das und
+bricht mit dem passenden `git restore`-Befehl ab, statt den getrimmten Zustand
+als neues Backup zu sichern.
+
 ### 4. Nach ErpApi übernehmen
 
 ```bash
