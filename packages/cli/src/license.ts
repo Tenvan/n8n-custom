@@ -12,12 +12,12 @@ import {
 } from '@n8n/constants';
 import { SettingsRepository } from '@n8n/db';
 import { OnPubSubEvent, OnShutdown } from '@n8n/decorators';
-import { Container, Service } from '@n8n/di';
+import { Service } from '@n8n/di';
 import type { TEntitlement, TLicenseBlock } from '@n8n_io/license-sdk';
 import { LicenseManager } from '@n8n_io/license-sdk';
 import { InstanceSettings } from 'n8n-core';
 
-// import { LicenseMetricsService } from '@/metrics/license-metrics.service'; // [CUSTOM-FORK] License Activation: Unused - LicenseManager SDK initialization commented out
+import { LicenseMetricsService } from '@/metrics/license-metrics.service';
 
 import { SETTINGS_LICENSE_CERT_KEY } from './constants';
 // import { N8N_VERSION } from './constants'; // [CUSTOM-FORK] License Activation: Unused - LicenseManager SDK initialization commented out
@@ -26,9 +26,6 @@ import { SETTINGS_LICENSE_CERT_KEY } from './constants';
 // const LICENSE_RENEWAL_DISABLED_WARNING =
 // 	'Automatic license renewal is disabled. The license will not renew automatically, and access to licensed features may be lost!';
 // [CUSTOM-FORK] End License Activation
-
-/** The license server rejects device fingerprints shorter than this. */
-const MIN_DEVICE_FINGERPRINT_LENGTH = 32;
 
 export type FeatureReturnType = Partial<
 	{
@@ -46,21 +43,24 @@ export class License implements LicenseProvider {
 
 	private refreshCallbacks: LicenseRefreshCallback[] = [];
 
-	private hasWarnedShortDeviceFingerprint = false;
 	// [CUSTOM-FORK] License Activation: Local full license activation flag
 	private localFullLicenseActive = false;
 	private localPlanName = 'Enterprise';
 	// [CUSTOM-FORK] End License Activation
 
+	// [CUSTOM-FORK] License Activation: Konstruktor-Signatur bleibt identisch zu master,
+	// damit Upstream-Tests und DI unveraendert bleiben. licenseMetricsService wird nicht
+	// mehr gelesen, seit die LicenseManager-SDK-Initialisierung entfaellt.
 	constructor(
 		private readonly logger: Logger,
 		private readonly instanceSettings: InstanceSettings,
 		private readonly settingsRepository: SettingsRepository,
-		// private readonly licenseMetricsService: LicenseMetricsService, // [CUSTOM-FORK] License Activation: Unused - LicenseManager SDK initialization commented out
+		_licenseMetricsService: LicenseMetricsService,
 		private readonly globalConfig: GlobalConfig,
 	) {
 		this.logger = this.logger.scoped('license');
 	}
+	// [CUSTOM-FORK] End License Activation
 
 	async init({
 		forceRecreate = false,
@@ -83,95 +83,6 @@ export class License implements LicenseProvider {
 		this.localPlanName = 'Enterprise';
 		this.logger.info('Local full license activated: Enterprise plan with all features enabled');
 		// [CUSTOM-FORK] End License Activation
-
-		// Original LicenseManager SDK initialization code commented out to prevent external server calls
-		/*
-		const { instanceType } = this.instanceSettings;
-		const isMainInstance = instanceType === 'main';
-		const server = this.globalConfig.license.serverUrl;
-		const offlineMode = !isMainInstance;
-		const autoRenewOffset = 72 * Time.hours.toSeconds;
-		const saveCertStr = isMainInstance
-			? async (value: TLicenseBlock) => await this.saveCertStr(value)
-			: async () => {};
-		const onFeatureChange = isMainInstance
-			? async () => await this.onFeatureChange()
-			: async () => {};
-		const onLicenseRenewed = isMainInstance
-			? async () => await this.onLicenseRenewed()
-			: async () => {};
-		const collectUsageMetrics = isMainInstance
-			? async () => await this.licenseMetricsService.collectUsageMetrics()
-			: async () => [];
-		const collectPassthroughData = isMainInstance
-			? async () => await this.licenseMetricsService.collectPassthroughData()
-			: async () => ({});
-		const onExpirySoon = !this.instanceSettings.isLeader ? () => this.onExpirySoon() : undefined;
-		const expirySoonOffsetMins = !this.instanceSettings.isLeader ? 120 : undefined;
-
-		const { isLeader } = this.instanceSettings;
-		const { autoRenewalEnabled } = this.globalConfig.license;
-		const eligibleToRenew = isCli || isLeader;
-
-		const shouldRenew = eligibleToRenew && autoRenewalEnabled;
-
-		if (eligibleToRenew && !autoRenewalEnabled) {
-			this.logger.warn(LICENSE_RENEWAL_DISABLED_WARNING);
-		}
-
-		try {
-			this.manager = new LicenseManager({
-				server,
-				tenantId: this.globalConfig.license.tenantId,
-				productIdentifier: `n8n-${N8N_VERSION}`,
-				autoRenewEnabled: autoRenewalEnabled,
-				autoRenewTimer: false,
-				renewOnInit: shouldRenew,
-				autoRenewOffset,
-				detachFloatingOnShutdown: this.globalConfig.license.detachFloatingOnShutdown,
-				offlineMode,
-				logger: this.logger,
-				loadCertStr: async () => await this.loadCertStr(),
-				saveCertStr,
-				deviceFingerprint: () => this.deviceFingerprint(),
-				collectUsageMetrics,
-				collectPassthroughData,
-				onFeatureChange,
-				onLicenseRenewed,
-				onExpirySoon,
-				expirySoonOffsetMins,
-			});
-
-			await this.manager.initialize();
-
-			this.logger.debug('License initialized');
-		} catch (error: unknown) {
-			if (error instanceof Error) {
-				this.logger.error('Could not initialize license manager sdk', { error });
-			}
-		}
-		*/
-	}
-
-	/**
-	 * `instanceId` can be pinned to an arbitrary value via `N8N_INSTANCE_ID` or
-	 * the `instance.id` deployment-key row, but the license server rejects
-	 * fingerprints shorter than 32 characters. Fall back to the
-	 * encryption-key-derived id — the fingerprint every instance used before
-	 * pinning existed — so activation and renewal keep working.
-	 */
-	private deviceFingerprint(): string {
-		const { instanceId, derivedInstanceId } = this.instanceSettings;
-		if (instanceId.length >= MIN_DEVICE_FINGERPRINT_LENGTH) return instanceId;
-
-		if (!this.hasWarnedShortDeviceFingerprint) {
-			this.hasWarnedShortDeviceFingerprint = true;
-			this.logger.warn(
-				`Instance ID is shorter than ${MIN_DEVICE_FINGERPRINT_LENGTH} characters, so it cannot be used as the license device fingerprint. Falling back to the encryption-key-derived ID. Check the N8N_INSTANCE_ID env var and the 'instance.id' deployment key.`,
-			);
-		}
-
-		return derivedInstanceId;
 	}
 
 	async loadCertStr(): Promise<TLicenseBlock> {
@@ -187,23 +98,6 @@ export class License implements LicenseProvider {
 		});
 
 		return databaseSettings?.value ?? '';
-	}
-
-	private async onFeatureChange() {
-		void this.broadcastReloadLicenseCommand();
-		await this.notifyRefreshCallbacks();
-	}
-
-	private async onLicenseRenewed() {
-		void this.broadcastReloadLicenseCommand();
-		await this.notifyRefreshCallbacks();
-	}
-
-	private async broadcastReloadLicenseCommand() {
-		if (this.globalConfig.executions.mode === 'queue' && this.instanceSettings.isLeader) {
-			const { Publisher } = await import('@/scaling/pubsub/publisher.service.js');
-			await Container.get(Publisher).publishCommand({ command: 'reload-license' });
-		}
 	}
 
 	async saveCertStr(value: TLicenseBlock): Promise<void> {
@@ -640,19 +534,21 @@ export class License implements LicenseProvider {
 		return this.getUsersLimit() === UNLIMITED_LICENSE_QUOTA;
 	}
 
-	private onExpirySoon() {
-		this.logger.info('License is about to expire soon, reloading license...');
+	@OnLeaderTakeover()
+	enableAutoRenewals() {
+		// [CUSTOM-FORK] License Activation: Auto-renewal disabled for local license
+		// No renewal needed for local full license
+		return;
+		// [CUSTOM-FORK] End License Activation
+		// this.manager?.enableAutoRenewals();
+	}
 
-		// reload in background to avoid blocking SDK
-
-		void this.reload()
-			.then(() => {
-				this.logger.info('Reloaded license on expiry soon');
-			})
-			.catch((error) => {
-				this.logger.error('Failed to reload license on expiry soon', {
-					error: error instanceof Error ? error.message : error,
-				});
-			});
+	@OnLeaderStepdown()
+	disableAutoRenewals() {
+		// [CUSTOM-FORK] License Activation: Auto-renewal disabled for local license
+		// No renewal needed for local full license
+		return;
+		// [CUSTOM-FORK] End License Activation
+		// this.manager?.disableAutoRenewals();
 	}
 }

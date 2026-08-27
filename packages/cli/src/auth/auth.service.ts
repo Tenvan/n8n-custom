@@ -122,11 +122,7 @@ export class AuthService {
 		];
 	}
 
-	createAuthMiddleware({
-		allowSkipMFA,
-		allowSkipPreviewAuth,
-		allowUnauthenticated,
-	}: CreateAuthMiddlewareOptions) {
+	createAuthMiddleware({ allowSkipMFA, allowUnauthenticated }: CreateAuthMiddlewareOptions) {
 		return async (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
 			const token = req.cookies[AUTH_COOKIE_NAME];
 
@@ -176,19 +172,11 @@ export class AuthService {
 				}
 			}
 
-			// [CUSTOM-FORK] No Auth: Always allow access without authentication
+			// [CUSTOM-FORK] No Auth: Jeder Request passiert die Middleware, unabhaengig von
+			// Session, MFA oder Preview-Mode. Original-Pruefung siehe master.
+			// ACHTUNG: Damit ist die Instanz fuer jeden erreichbaren Client ohne Anmeldung
+			// bedienbar — sie darf ausschliesslich an localhost gebunden betrieben werden.
 			next();
-			// [CUSTOM-FORK] End No Auth
-
-			// [CUSTOM-FORK] No Auth: Disable original authentication check
-			/*
-			const isPreviewMode = process.env.N8N_PREVIEW_MODE === 'true';
-			const shouldSkipAuth = (allowSkipPreviewAuth && isPreviewMode) || allowUnauthenticated;
-
-			if (Object.hasOwn(req, 'user') && req.user) next();
-			else if (shouldSkipAuth) next();
-			else res.status(401).json({ status: 'error', message: 'Unauthorized' });
-			*/
 			// [CUSTOM-FORK] End No Auth
 		};
 	}
