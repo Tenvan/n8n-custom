@@ -1,15 +1,12 @@
 import type { LicenseState } from '@n8n/backend-common';
-import { markHttpRequestError } from '@n8n/backend-network';
-import type { HttpRequestClient, OutboundHttp } from '@n8n/backend-network';
+import type { OutboundHttp } from '@n8n/backend-network';
 import type { WorkflowRepository } from '@n8n/db';
 import type { TEntitlement } from '@n8n_io/license-sdk';
-import { AxiosError } from 'axios';
 import { mock } from 'vitest-mock-extended';
 
-import { BadRequestError } from '@/errors/response-errors/bad-request.error';
 import type { EventService } from '@/events/event.service';
 import type { License } from '@/license';
-import { LicenseErrors, LicenseService } from '@/license/license.service';
+import { LicenseService } from '@/license/license.service';
 
 describe('LicenseService', () => {
 	const license = mock<License>();
@@ -17,9 +14,7 @@ describe('LicenseService', () => {
 	const workflowRepository = mock<WorkflowRepository>();
 	const entitlement = mock<TEntitlement>({ productId: '123' });
 	const eventService = mock<EventService>();
-	const request = vi.fn();
-	const requests = vi.fn().mockReturnValue(mock<HttpRequestClient>({ request }));
-	const outboundHttp = mock<OutboundHttp>({ requests });
+	const outboundHttp = mock<OutboundHttp>();
 	const licenseService = new LicenseService(
 		mock(),
 		license,
@@ -38,12 +33,6 @@ describe('LicenseService', () => {
 	workflowRepository.getWorkflowsWithEvaluationCount.mockResolvedValue(1);
 
 	beforeEach(() => vi.clearAllMocks());
-
-	class LicenseError extends Error {
-		constructor(readonly errorId: string) {
-			super(`License error: ${errorId}`);
-		}
-	}
 
 	describe('getLicenseData', () => {
 		it('should return usage and license data', async () => {
@@ -68,141 +57,46 @@ describe('LicenseService', () => {
 		});
 	});
 
-	describe('activateLicense', () => {
-		it('should activate license without eulaUri (initial activation)', async () => {
-			license.activate.mockResolvedValueOnce();
-			await licenseService.activateLicense('activation-key');
-			expect(license.activate).toHaveBeenCalledWith('activation-key');
+	// [CUSTOM-FORK] License Activation: Die Upstream-Suites zu activateLicense,
+	// renewLicense und registerCommunityEdition entfielen — diese Pfade sprechen im Fork
+	// keinen Lizenzserver mehr an. Geprueft wird stattdessen, dass sie folgenlos bleiben.
+	describe('no external license server calls', () => {
+		test('activateLicense resolves without touching the license', async () => {
+			await expect(licenseService.activateLicense('activation-key')).resolves.toBeUndefined();
+			expect(license.activate).not.toHaveBeenCalled();
 		});
 
-		it('should activate license with eulaUri and userEmail (EULA acceptance)', async () => {
-			license.activate.mockResolvedValueOnce();
-			await licenseService.activateLicense(
-				'activation-key',
-				'https://n8n.io/legal/eula/',
-				'user@example.com',
-			);
-			expect(license.activate).toHaveBeenCalledWith(
-				'activation-key',
-				'https://n8n.io/legal/eula/',
-				'user@example.com',
-			);
+		test('activateLicense accepts the EULA overload without touching the license', async () => {
+			await expect(
+				licenseService.activateLicense('activation-key', 'https://eula', 'user@example.com'),
+			).resolves.toBeUndefined();
+			expect(license.activate).not.toHaveBeenCalled();
 		});
 
-		it('should throw LicenseEulaRequiredError when EULA_REQUIRED error occurs', async () => {
-			const eulaError = new LicenseError('EULA_REQUIRED');
-			(eulaError as any).info = { eula: { uri: 'https://n8n.io/legal/eula/' } };
-			license.activate.mockRejectedValueOnce(eulaError);
-
-			await expect(licenseService.activateLicense('activation-key')).rejects.toThrow(
-				'License activation requires EULA acceptance',
-			);
-		});
-
-		Object.entries(LicenseErrors).forEach(([errorId, message]) =>
-			it(`should handle ${errorId} error`, async () => {
-				license.activate.mockRejectedValueOnce(new LicenseError(errorId));
-				const execution = licenseService.activateLicense('');
-
-				await expect(execution).rejects.toThrow(BadRequestError);
-				await expect(execution).rejects.toThrow(message);
-			}),
-		);
-	});
-
-	describe('renewLicense', () => {
-		test('should skip renewal for unlicensed user (Community plan)', async () => {
-			license.getPlanName.mockReturnValueOnce('Community');
-
-			await licenseService.renewLicense();
+		test('renewLicense reports success without renewing', async () => {
+			await expect(licenseService.renewLicense()).resolves.toBeUndefined();
 
 			expect(license.renew).not.toHaveBeenCalled();
-			expect(eventService.emit).not.toHaveBeenCalled();
-		});
-
-		test('on success', async () => {
-			license.renew.mockResolvedValueOnce();
-			await licenseService.renewLicense();
-
 			expect(eventService.emit).toHaveBeenCalledWith('license-renewal-attempted', {
 				success: true,
 			});
 		});
 
-		test('on failure', async () => {
-			license.renew.mockRejectedValueOnce(new LicenseError('RESERVATION_EXPIRED'));
-
-			const execution = licenseService.renewLicense();
-			await expect(execution).rejects.toThrow(BadRequestError);
-			await expect(execution).rejects.toThrow('Activation key has expired');
-
-			expect(eventService.emit).toHaveBeenCalledWith('license-renewal-attempted', {
-				success: false,
-			});
-		});
-	});
-
-	describe('registerCommunityEdition', () => {
-		test('on success', async () => {
-			request.mockResolvedValueOnce({ title: 'Title', text: 'Text', licenseKey: 'abc-123' });
-			const data = await licenseService.registerCommunityEdition({
+		test('registerCommunityEdition returns a local success response', async () => {
+			const result = await licenseService.registerCommunityEdition({
 				userId: '123',
-				email: 'test@ema.il',
-				instanceId: '123',
-				instanceUrl: 'http://localhost',
+				email: 'user@example.com',
+				instanceId: 'instance-id',
+				instanceUrl: 'http://localhost:5678',
 				licenseType: 'community-registered',
 			});
 
-			expect(data).toEqual({ title: 'Title', text: 'Text' });
-			expect(request).toHaveBeenCalledWith({
-				url: 'https://enterprise.n8n.io/community-registered',
-				method: 'POST',
-				body: {
-					email: 'test@ema.il',
-					instanceId: '123',
-					instanceUrl: 'http://localhost',
-					licenseType: 'community-registered',
-				},
-				json: true,
+			expect(result).toEqual({
+				title: 'Registration successful',
+				text: 'Your instance is already running with Enterprise license.',
 			});
-			expect(eventService.emit).toHaveBeenCalledWith('license-community-plus-registered', {
-				userId: '123',
-				email: 'test@ema.il',
-				licenseKey: 'abc-123',
-			});
-		});
-
-		test('on failure surfaces the upstream error message', async () => {
-			// The real client tags the errors it rejects; mirror that so the guard fires.
-			const requestError = markHttpRequestError(new AxiosError('Failed'));
-			requestError.response = mock<AxiosError['response']>({
-				data: { message: 'Email already registered' },
-			});
-			request.mockRejectedValueOnce(requestError);
-			await expect(
-				licenseService.registerCommunityEdition({
-					userId: '123',
-					email: 'test@ema.il',
-					instanceId: '123',
-					instanceUrl: 'http://localhost',
-					licenseType: 'community-registered',
-				}),
-			).rejects.toThrowError('Failed to register community edition: Email already registered');
-			expect(eventService.emit).not.toHaveBeenCalled();
-		});
-
-		test('on non-HTTP failure throws a generic error', async () => {
-			request.mockRejectedValueOnce(new Error('boom'));
-			await expect(
-				licenseService.registerCommunityEdition({
-					userId: '123',
-					email: 'test@ema.il',
-					instanceId: '123',
-					instanceUrl: 'http://localhost',
-					licenseType: 'community-registered',
-				}),
-			).rejects.toThrowError('Failed to register community edition');
 			expect(eventService.emit).not.toHaveBeenCalled();
 		});
 	});
+	// [CUSTOM-FORK] End License Activation
 });
