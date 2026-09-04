@@ -4,6 +4,25 @@ Dieses Repository ist ein Fork von n8n mit orgaMAX-spezifischen Anpassungen. Das
 Ziel des Deploys sind `.tgz`-Archive aller Workspace-Packages, die das
 ErpApi-Projekt per `file:`-Link in seiner `package.json` einbindet.
 
+## orgaMAX-Dokumentation
+
+- [Aktivierungs-Workflow](N8N_ACTIVATING_WF.MD)
+- [Fester Benutzer-Login](N8N_FIXED_USER_LOGIN.MD)
+- [Entfernung der Aktivierungspflicht](N8N_REMOVE_ACTIVATION.MD)
+
+## Hauptweg
+
+Der vollständige n8n-Package-Deploy läuft über das Root-`Taskfile.yml`:
+
+```bash
+task orgamax:deploy
+```
+
+Er führt strikt `orgamax:install`, `orgamax:build`, `orgamax:pack` und
+`orgamax:mirror` aus. Der Mirror prüft das Manifest und legt den vollständigen
+`.deploy`-Stand versioniert unter `../packages/<root-package-version>` ab.
+`task orgamax:dry-run` listet die zu packenden Packages ohne Änderung auf.
+
 ## Branch-Modell
 
 | Branch | Zweck | Regel |
@@ -44,10 +63,10 @@ Versionskonflikte zwischen zwei `@typescript-eslint/types`-Ständen in
 ```mermaid
 %%{init: {'theme': 'dark'}}%%
 flowchart LR
-    A[pnpm install] --> B[pnpm build]
-    B --> C[pnpm deploy:packages]
+    A[task orgamax:install] --> B[task orgamax:build]
+    B --> C[task orgamax:pack]
     C --> D[".deploy/*.tgz"]
-    D --> E["Kopie nach<br/>ErpApi/packages/"]
+    D --> E["task orgamax:mirror<br/>../packages/version/"]
     E --> F["file:-Links in<br/>ErpApi/package.json"]
 ```
 
@@ -55,7 +74,7 @@ flowchart LR
 
 ```bash
 git switch custom-erpapi
-pnpm install --frozen-lockfile
+task orgamax:install
 ```
 
 Dauert bei leerem `node_modules` mehrere Minuten. Die Warnungen
@@ -68,7 +87,7 @@ zuletzt fehlgeschlagenen Builds: `node_modules` fehlte komplett.
 ### 2. Bauen
 
 ```bash
-pnpm build > build.log 2>&1
+task orgamax:build
 tail -n 20 build.log
 ```
 
@@ -94,14 +113,14 @@ installiert neu).
 ### 3. Packages packen
 
 ```bash
-pnpm deploy:packages
+task orgamax:pack
 ```
 
 | Befehl | Wirkung |
 | --- | --- |
-| `pnpm deploy:packages` | Packt nach `.deploy/`. Setzt einen abgeschlossenen Build voraus. |
-| `pnpm deploy:packages:build` | Baut vorher (`pnpm build && …`). |
-| `pnpm deploy:packages:dry-run` | Listet nur, was gepackt würde. |
+| `task orgamax:pack` | Packt nach `.deploy/`. Setzt einen abgeschlossenen Build voraus. |
+| `task orgamax:dry-run` | Listet nur, was gepackt würde. |
+| `task orgamax:deploy` | Installiert, baut, packt und spiegelt versioniert. |
 
 Ergebnis: 65 Tarballs plus `packing-manifest.json` in `.deploy/`, zusammen rund
 49 MB. Der Ordner ist gitignored.
@@ -125,36 +144,63 @@ die drei Manifeste bleiben getrimmt liegen. Der nächste Lauf erkennt das und
 bricht mit dem passenden `git restore`-Befehl ab, statt den getrimmten Zustand
 als neues Backup zu sichern.
 
-### 4. Nach ErpApi übernehmen
+### 4. Versioniert spiegeln
 
 ```bash
-cp .deploy/*.tgz /c/WORKSPACE/ErpApi/packages/
+task orgamax:mirror
 ```
 
-Danach müssen die `file:`-Links in `ErpApi/package.json` auf die neuen
-Versionsnummern zeigen. Beim Sprung von 2.5.0 auf 2.37.0 ändert sich praktisch
-jede Version. Aus dem Manifest lässt sich das automatisch ableiten:
+Der Mirror übernimmt exakt die manifestierten Tarballs und
+`packing-manifest.json` nach `../packages/<root-package-version>`. Er prüft
+vorher Root-/CLI-Version, fehlgeschlagene oder doppelte Packages sowie die
+vollständige Tarball-Liste. Das bestehende Versionsverzeichnis wird über Backup
+und Rollback ersetzt.
+
+### 5. ErpApi-Handoff
+
+Der Mirror ändert ErpApi nicht. Danach setzt ein eigener Task die `file:`-Links
+in `ErpApi/package.json` auf den gespiegelten Stand:
 
 ```bash
-node -e "
-const fs = require('fs');
-const manifest = require('./.deploy/packing-manifest.json');
-const pkgPath = '/c/WORKSPACE/ErpApi/package.json';
-const pkg = JSON.parse(fs.readFileSync(pkgPath, 'utf8'));
-let changed = 0;
-for (const { name, file } of manifest.packages) {
-  if (pkg.dependencies?.[name]?.startsWith('file:')) {
-    pkg.dependencies[name] = 'file:packages/' + file;
-    changed++;
-  }
-}
-fs.writeFileSync(pkgPath, JSON.stringify(pkg, null, 2) + '\n');
-console.log(changed + ' file:-Links aktualisiert');
-"
+task orgamax:erpapi-link              # Default-Ziel ../ErpApi
+task orgamax:erpapi-link -- /c/WORKSPACE/ErpApi
 ```
 
-Alte Tarballs im Zielordner vorher löschen, sonst sammeln sich mehrere Versionen
-desselben Packages an.
+`scripts/link-erpapi-packages.mjs` arbeitet in zwei Schritten: erst fliegen
+**alle** bisherigen `file:packages/`-Einträge aus `dependencies` und
+`devDependencies`, dann wird jedes Package aus dem gespiegelten
+`packing-manifest.json` neu eingetragen und sein Tarball nach `ErpApi/packages/`
+kopiert. Die `package.json` wird atomar über eine Temp-Datei ersetzt, die Keys
+bleiben alphabetisch sortiert.
+
+Weil alte Einträge grundsätzlich entfernt werden, verschwindet ein entfallenes
+Package von selbst — es gibt keinen Abbruch und keine Liste zu pflegen.
+
+### dependencies oder devDependencies
+
+Die Sektion wird nicht geraten, sondern aus dem Monorepo abgeleitet: das Script
+berechnet das transitive Closure über `dependencies` ab `n8n` und ordnet ein
+Package genau dann `dependencies` zu, wenn es darin liegt. Beim aktuellen Stand
+sind das 53 von 65 Packages; die übrigen 12 landen in `devDependencies`.
+
+Die Regel ist absichtlich funktional und nicht semantisch. `@n8n/typescript-config`
+klingt nach Tooling, wird aber von `@n8n/ai-utilities` und
+`@n8n/n8n-nodes-langchain` als `dependencies` deklariert und muss deshalb auch
+bei `npm install --production` vorhanden sein.
+
+| Situation | Verhalten |
+| --- | --- |
+| Bisheriger `file:packages/`-Link | wird entfernt und neu gesetzt, ggf. in der anderen Sektion |
+| Package nicht mehr im Manifest | Link verschwindet, kein Abbruch |
+| Neues Package im Manifest | wird ergänzt, Sektion per Runtime-Closure |
+| `file:`-Link auf etwas anderes als `packages/` | bleibt unberührt |
+| Registry-Dependency (`^4.19.2` o. ä.) | bleibt unberührt |
+| Manifest fehlt in `../packages/<version>` | Abbruch mit Hinweis auf `task orgamax:mirror` |
+| Nicht mehr referenzierter Tarball in `ErpApi/packages/` | wird berichtet, **nicht** gelöscht |
+
+Der Task greift in ein fremdes Projekt ein und hängt deshalb bewusst **nicht** in
+`orgamax:deploy`. Die Verantwortung für Install, Service-Deploy, Smoke-Test und
+Rollback in ErpApi bleibt bewusst separat.
 
 ## Was sich gegenüber v2.5.0 geändert hat
 
@@ -167,7 +213,7 @@ aktuelle Stand hat 65. Neu hinzugekommen sind unter anderem `@n8n/agents`,
 
 Weggefallen ist `n8n-node-dev`; an seine Stelle tritt `@n8n/cli`.
 
-ErpApi bindet aktuell 42 Packages per `file:`-Link ein. Ob die neuen Packages
+ErpApi bindet aktuell 41 Packages per `file:`-Link ein. Ob die neuen Packages
 dort gebraucht werden, hängt davon ab, welche n8n-Einstiegspunkte ErpApi nutzt —
 `n8n` selbst zieht sie als Dependencies nach, dann müssen sie ebenfalls als
 `file:`-Link vorliegen, sonst holt npm die Registry-Version.
@@ -184,7 +230,7 @@ grep -rn "CUSTOM-FORK" packages/ --include=*.ts --include=*.vue
 | Bereich | Dateien | Wirkung |
 | --- | --- | --- |
 | Lizenz | `packages/cli/src/license.ts`, `license/license.service.ts`, `commands/base-command.ts` | `init()` aktiviert lokal einen Enterprise-Plan, statt das LicenseManager-SDK zu starten. Aktivierung, Renewal und Trial-Registrierung sind No-Ops ohne externe Calls. |
-| Authentifizierung | `packages/cli/src/auth/auth.service.ts` | `createAuthMiddleware` ruft bedingungslos `next()` auf. Es findet **keine** Anmeldeprüfung mehr statt. |
+| Portalzugang | `packages/cli/src/auth/auth.service.ts` | `createAuthMiddleware` stellt einem Request **von Loopback ohne gültiges Cookie** einmalig eine echte Owner-Session aus; ab dann läuft alles den regulären Session-Pfad. Jede andere Herkunft erhält unverändert 401. Kein Bootstrap, solange MFA erzwungen ist oder der Owner fehlt bzw. deaktiviert ist. |
 | Public API | `packages/cli/src/services/local-ipc-auth.strategy.ts`, `server.ts` | Requests von Loopback-Adressen werden als Instance-Owner authentifiziert, damit ErpApi die Public API ohne API-Key anspricht. |
 | Branding | `OrgaMaxLogo.vue`, `MainSidebarHeader.vue`, `AuthView.vue`, `CustomFeaturesPanel.vue`, `public/static/logos/` | orgaMAX-Logo in Sidebar und Login. |
 
@@ -274,33 +320,37 @@ ENOENT: no such file or directory, mkdir 'C:\WORKSPACE
 Das Deploy-Skript übergibt den Pfad deshalb mit Forward-Slashes. Wer weitere
 Skripte ergänzt, die Pfade an externe Prozesse reichen, sollte dasselbe tun.
 
-## Verbesserungsvorschläge
+## Erledigte Verbesserungen
 
-- `.gitattributes` um `*.generated.yml text eol=lf` ergänzen, damit der Build
-  keinen Dirty-State mehr hinterlässt.
-- Den pauschalen `next()`-Aufruf in `auth.service.ts` prüfen: wenn ErpApi nur
-  über die Public API spricht, reicht `LocalIpcAuthStrategy`.
-- Einen Schritt ergänzen, der die `file:`-Links in `ErpApi/package.json`
-  automatisch aus dem `packing-manifest.json` aktualisiert, statt den Node-Aufruf
-  aus Abschnitt 4 von Hand auszuführen.
+- `.gitattributes` trägt `*.generated.yml text eol=lf`, damit der Build keinen
+  Dirty-State mehr hinterlässt.
+- Der pauschale `next()`-Aufruf in `auth.service.ts` ist ersetzt. Statt jeden
+  Request durchzulassen, bekommt nur ein Request von Loopback ohne gültiges
+  Cookie einmalig eine echte Owner-Session; alles andere erhält wieder 401.
+  Abgedeckt von `packages/cli/src/auth/__tests__/auth.service.test.ts`
+  (`local portal loopback bootstrap`).
+- `task orgamax:erpapi-link` ersetzt alle `file:packages/`-Links aus dem
+  `packing-manifest.json` und sortiert sie per Runtime-Closure nach
+  `dependencies` bzw. `devDependencies` ein.
 
 ## Nächste Schritte
 
-- [ ] Prüfen, welche der 23 neuen Packages ErpApi tatsächlich als `file:`-Link
-      braucht.
+- [ ] `task orgamax:erpapi-link` scharf gegen `C:\WORKSPACE\ErpApi` laufen lassen.
+      Bisher nur gegen eine Kopie der echten `package.json` geprüft. Der Lauf setzt
+      65 Links, verschiebt 9 Einträge zwischen den Sektionen und kopiert 65 Tarballs.
+- [ ] Nach dem scharfen Lauf `npm install` in ErpApi ausführen und prüfen, dass die
+      9 Sektionswechsel keinen Build brechen. Belegt ist nur, dass ErpApi keines der
+      12 devDependencies-Packages im Quellcode importiert.
 - [ ] Einen Smoke-Test definieren, der nach dem Deploy bestätigt, dass ErpApi die
       n8n-Public-API über Loopback ohne API-Key erreicht.
-- [ ] Entscheiden, ob der pauschale `next()`-Aufruf in `auth.service.ts` bleiben
-      soll oder `LocalIpcAuthStrategy` allein genügt.
-
-## Verifizierter Stand
-
-Stand 27.08.2026 auf `custom-erpapi`, n8n 2.37.0:
-
-| Schritt | Ergebnis |
-| --- | --- |
-| `pnpm install --frozen-lockfile` | exit 0 |
-| `pnpm build` | exit 0, 70 Tasks, 0 TypeScript-Fehler |
-| `pnpm exec tsc --noEmit` in `packages/cli` | exit 0 |
-| Tests der berührten Suites | 53 grün |
-| `pnpm deploy:packages` | exit 0, 65 von 65 Packages, 49,4 MB |
+- [ ] **Ungeprüft:** bestätigen, dass das Auth-Cookie im Browser ankommt.
+      `N8N_SECURE_COOKIE` ist per Default `true`, das Portal läuft aber über
+      `http://`. Moderne Browser akzeptieren `Secure`-Cookies auf
+      `localhost`/`127.0.0.1` (trustworthy origin), ältere nicht. Symptom bei
+      Ablehnung: die Login-Seite erscheint immer wieder, weil jeder Request ohne
+      Cookie einen neuen Bootstrap auslöst. Workaround dann
+      `N8N_SECURE_COOKIE=false` — nur zulässig, solange ausschließlich an
+      Loopback gebunden gelauscht wird.
+- [ ] Bestätigen, dass die Instanz im Betrieb tatsächlich nur an Loopback
+      gebunden lauscht. Der Portalzugang setzt genau das voraus; hinter einem
+      Reverse Proxy trägt der Socket die Proxy-Adresse, nicht die des Clients.

@@ -1,0 +1,53 @@
+version: "3"
+
+tasks:
+  orgamax:dev:
+    desc: Startet den Standard-Entwicklungsserver für orgaMAX
+    env:
+      N8N_USER_FOLDER: "{{.TASKFILE_DIR}}"
+    cmds:
+      - pnpm build
+      - pnpm dev:be
+
+  orgamax:install:
+    desc: Installiert die gelockten Dependencies für orgaMAX
+    cmds:
+      - pnpm install --frozen-lockfile
+
+  orgamax:build:
+    desc: Baut alle n8n-Packages für orgaMAX
+    cmds:
+      - pnpm build > build.log 2>&1
+
+  orgamax:pack:
+    desc: Erstellt die orgaMAX-Tarballs in .deploy
+    cmds:
+      - pnpm deploy:packages
+
+  orgamax:mirror:
+    desc: >-
+      Spiegelt den validierten .deploy-Stand nach ../ErpApi/packages/<version>
+      (Fallback: ../packages/<version>)
+    cmds:
+      - node scripts/mirror-deploy-packages.mjs
+
+  orgamax:deploy:
+    desc: Installiert, baut, packt und spiegelt die orgaMAX-Pakete
+    cmds:
+      - task: orgamax:install
+      - task: orgamax:build
+      - task: orgamax:pack
+      - task: orgamax:mirror
+
+  orgamax:erpapi-link:
+    desc: >-
+      Setzt die file:-Links in ErpApi/package.json auf den gespiegelten Stand.
+      Greift in ein fremdes Projekt ein und läuft deshalb nicht in orgamax:deploy mit.
+      Optionaler Zielpfad via CLI_ARGS, Default ../ErpApi
+    cmds:
+      - node scripts/link-erpapi-packages.mjs {{.CLI_ARGS}}
+
+  orgamax:dry-run:
+    desc: Listet die zu packenden orgaMAX-Pakete ohne Änderung auf
+    cmds:
+      - pnpm deploy:packages:dry-run

@@ -1,3 +1,4 @@
 *.sh text eol=lf
 *.patch text eol=lf
 docs/generated/**/* linguist-generated
+*.generated.yml text eol=lf

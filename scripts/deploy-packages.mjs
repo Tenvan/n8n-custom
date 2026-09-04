@@ -6,7 +6,9 @@
  * Voraussetzung: `pnpm build` lief durch — ohne dist/ enthalten die Tarballs keinen Code.
  */
 import { $, chalk, echo, fs, glob } from 'zx';
+import { execFile } from 'node:child_process';
 import path from 'path';
+import { promisify } from 'node:util';
 import { fileURLToPath } from 'url';
 
 const rootDir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
@@ -15,6 +17,8 @@ const deployDir = path.join(rootDir, '.deploy');
 // gedeutet. Forward-Slashes versteht Node/pnpm auf jeder Plattform.
 const deployDirArg = deployDir.split(path.sep).join('/');
 const dryRun = process.argv.includes('--dry-run');
+const execFileAsync = promisify(execFile);
+const pnpmCommand = 'pnpm';
 
 $.verbose = false;
 
@@ -115,7 +119,12 @@ async function main() {
 		for (const pkg of packages) {
 			const expected = tarballName(pkg);
 			try {
-				await $({ cwd: pkg.dir })`pnpm pack --pack-destination ${deployDirArg}`;
+				await execFileAsync(pnpmCommand, ['pack', '--pack-destination', deployDirArg], {
+					cwd: pkg.dir,
+					env: process.env,
+					encoding: 'utf8',
+					maxBuffer: Infinity,
+				});
 
 				const target = path.join(deployDir, expected);
 				if (!(await fs.pathExists(target))) {

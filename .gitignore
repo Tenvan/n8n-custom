@@ -103,3 +103,5 @@ deploy.log
 
 # Serena MCP
 .serena/
+.work/
+.cache/
