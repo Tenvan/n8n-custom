@@ -46,6 +46,10 @@ tasks:
       Optionaler Zielpfad via CLI_ARGS, Default ../ErpApi
     cmds:
       - node scripts/link-erpapi-packages.mjs {{.CLI_ARGS}}
+      # ErpApi nutzt npm, nicht pnpm. Der Install läuft dort, nicht hier:
+      # `python tools/python/reinstall.py -s 1,3` oder `npm install`.
+      # Ein pnpm install in ErpApi zerstört Lockfile und node_modules-Layout.
+      # Details: ORGAMAX/ERPAPI_README.MD, Abschnitt "Install in ErpApi".
 
   orgamax:dry-run:
     desc: Listet die zu packenden orgaMAX-Pakete ohne Änderung auf

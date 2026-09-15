@@ -178,6 +178,12 @@ async function main() {
 		console.log(`\n${stale.length} nicht mehr referenzierte Tarballs in ErpApi/packages/${version}:`);
 		console.log(`  ${stale.join(', ')}`);
 	}
+
+	// ErpApi ist kein pnpm-Projekt. Ein pnpm install dort legt ein pnpm-lock.yaml
+	// neben das gueltige package-lock.json und baut node_modules auf .pnpm um.
+	console.log('\nNaechster Schritt in ErpApi — mit npm, NICHT mit pnpm:');
+	console.log('  python tools/python/reinstall.py -s 1,3   (bevorzugt)');
+	console.log('  npm install                               (Fallback; npm ci erst danach)');
 }
 
 main().catch((error) => {
