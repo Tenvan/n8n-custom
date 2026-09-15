@@ -533,22 +533,4 @@ export class License implements LicenseProvider {
 	isWithinUsersLimit() {
 		return this.getUsersLimit() === UNLIMITED_LICENSE_QUOTA;
 	}
-
-	@OnLeaderTakeover()
-	enableAutoRenewals() {
-		// [CUSTOM-FORK] License Activation: Auto-renewal disabled for local license
-		// No renewal needed for local full license
-		return;
-		// [CUSTOM-FORK] End License Activation
-		// this.manager?.enableAutoRenewals();
-	}
-
-	@OnLeaderStepdown()
-	disableAutoRenewals() {
-		// [CUSTOM-FORK] License Activation: Auto-renewal disabled for local license
-		// No renewal needed for local full license
-		return;
-		// [CUSTOM-FORK] End License Activation
-		// this.manager?.disableAutoRenewals();
-	}
 }
