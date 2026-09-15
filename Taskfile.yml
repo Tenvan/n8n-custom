@@ -47,7 +47,7 @@ tasks:
     cmds:
       - node scripts/link-erpapi-packages.mjs {{.CLI_ARGS}}
       # ErpApi nutzt npm, nicht pnpm. Der Install läuft dort, nicht hier:
-      # `python tools/python/reinstall.py -s 1,3` oder `npm install`.
+      # `python tools/python/reinstall.py --all [--keep-node]`.
       # Ein pnpm install in ErpApi zerstört Lockfile und node_modules-Layout.
       # Details: ORGAMAX/ERPAPI_README.MD, Abschnitt "Install in ErpApi".
 

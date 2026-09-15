@@ -210,47 +210,29 @@ Rollback in ErpApi bleibt bewusst separat.
 > `.pnpm/`-Store um. Danach passt weder Lockfile noch Layout zu dem, was ErpApi
 > erwartet, und die Reparatur kostet einen vollständigen Reinstall.
 
-Der Install gehört ErpApi und läuft dort. Zwei Wege, in dieser Reihenfolge:
+Der Install gehört ErpApi und läuft dort über dessen Reinstall-Script:
 
 ```bash
-# Bevorzugt: das Installationsscript von ErpApi
-python tools/python/reinstall.py          # interaktive Auswahl
-python tools/python/reinstall.py -s 1,3   # node_modules neu, dann Install
+cd ../ErpApi
+python tools/python/reinstall.py --all               # node_modules neu, Install, native Rebuilds, Prüfung
+python tools/python/reinstall.py --all --keep-node   # dito, ohne laufende node.exe zu beenden
+python tools/python/reinstall.py --verify-only       # nur prüfen, ob die nativen Module laden
 ```
 
-```bash
-# Fallback, wenn das Script nicht in Frage kommt
-npm install    # bei geänderten Paketversionen: aktualisiert package-lock.json
-npm ci         # wenn Lockfile und package.json schon synchron sind
-```
+Das Script endet mit Exit-Code 0 nur, wenn alle Pflichtmodule laden. Es fängt
+dabei drei Punkte ab, die ein blankes `npm install` unter Node 26 offen lässt:
+die Install-Kette (`npm ci` → `npm install` → `npm install --ignore-scripts`),
+die nativen Rebuilds für sqlite3, better-sqlite3 und Firebird, und den
+abschließenden Ladetest. Die Details stehen in `ErpApi/AGENTS.md`.
 
-Nach einem Versionswechsel der Tarballs greift `npm ci` nicht: es verlangt ein
-Lockfile, das zur `package.json` passt. Erst `npm install` im Root, danach ist
-`npm ci` wieder der richtige Befehl.
+Ohne `--keep-node` beendet das Script als ersten Schritt **alle**
+`node.exe`-Prozesse (`taskkill /IM node.exe /F`) — das trifft auch Editoren,
+Agent-Sessions und jede laufende n8n-Instanz.
 
-`reinstall.py` beendet als ersten Schritt **alle** `node.exe`-Prozesse
-(`taskkill /IM node.exe /F`). Das trifft auch Editoren, Agent-Sessions und jede
-laufende n8n-Instanz. Wer in einem Node-Prozess arbeitet, nimmt den npm-Weg.
-
-Unter Node 26 bricht ein einfaches `npm install` ab: `@confluentinc/kafka-javascript`
-hat keine Prebuilds für die ABI `node-v147` und der Fallback auf den Source-Build
-scheitert an einem node-gyp-Pfadfehler. Der Abbruch lässt `node_modules`
-unvollständig zurück — auch `n8n` fehlt dann. Darum die Build-Scripts überspringen
-und die nativen Module gezielt nachziehen:
-
-```bash
-npm install --ignore-scripts
-npm run sqlite:rebuild   # better-sqlite3
-npm run fb:rebuild       # Firebird-Treiber
-```
-
-`@confluentinc/kafka-javascript` ist eine transitive Abhängigkeit des
-Kafka-Nodes von `n8n-nodes-base` und wird von ErpApi selbst nicht benutzt. Ohne
+Für den n8n-Anteil bleibt festzuhalten: `@confluentinc/kafka-javascript` lässt
+sich unter Node 26 nicht bauen. Es ist eine transitive Abhängigkeit des
+Kafka-Nodes von `n8n-nodes-base` und wird von ErpApi nicht benutzt — ohne
 gebautes Binary fällt nur dieser eine Node aus, der Start bleibt intakt.
-
-`node-firebird-native-api` lässt sich mit node-gyp 12 und den aktuellen
-VS-BuildTools ebenfalls nicht bauen (`LNK1117`). Das ist ein bestehender
-Umgebungspunkt und keine Folge des n8n-Deploys.
 
 ## Was sich gegenüber v2.5.0 geändert hat
 
