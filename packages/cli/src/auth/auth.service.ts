@@ -176,9 +176,31 @@ export class AuthService {
 			// Session, MFA oder Preview-Mode. Original-Pruefung siehe master.
 			// ACHTUNG: Damit ist die Instanz fuer jeden erreichbaren Client ohne Anmeldung
 			// bedienbar — sie darf ausschliesslich an localhost gebunden betrieben werden.
+			// Ohne Session-Cookie bleibt req.user leer. Controller lesen req.user.id direkt
+			// (z. B. AuthController.currentUser), das ergibt einen TypeError statt einer
+			// Antwort. Darum den Instance-Owner nachziehen — dieselbe Identitaet, die
+			// LocalIpcAuthStrategy fuer die Public API vergibt.
+			if (!req.user) {
+				const owner = await this.findInstanceOwner();
+				if (owner) req.user = owner;
+			}
 			next();
 			// [CUSTOM-FORK] End No Auth
 		};
+	}
+
+	/**
+	 * [CUSTOM-FORK] Der Instance-Owner ist die Identitaet fuer Requests ohne Session.
+	 * Ein deaktivierter Owner zaehlt nicht — dann bleibt req.user leer und der
+	 * Controller scheitert sichtbar, statt mit gesperrten Rechten zu arbeiten.
+	 */
+	private async findInstanceOwner(): Promise<User | undefined> {
+		const owner = await this.userRepository.findOne({
+			where: { role: { slug: GLOBAL_OWNER_ROLE.slug } },
+			relations: { role: true },
+		});
+
+		return owner && !owner.disabled ? owner : undefined;
 	}
 
 	getCookieToken(req: Request) {

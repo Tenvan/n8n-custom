@@ -114,6 +114,10 @@ describe('AuthService', () => {
 	});
 
 	describe('createAuthMiddleware', () => {
+		// [CUSTOM-FORK] Die Middleware laesst jeden Request passieren und setzt ohne
+		// gueltiges Cookie den Instance-Owner als req.user. Die 401-Faelle ohne Cookie
+		// und der Preview-Mode-Pfad des Upstreams existieren hier nicht mehr; ihre
+		// Suiten stehen in master. allowSkipPreviewAuth wird nicht mehr ausgewertet.
 		const mockReq = () =>
 			mock<AuthenticatedRequest>({
 				cookies: {},
@@ -122,55 +126,107 @@ describe('AuthService', () => {
 			});
 		const res = mock<Response>();
 		const next = vi.fn() as NextFunction;
+		const owner = mockUser({ id: 'owner-id' });
 
 		beforeEach(() => {
 			res.status.mockReturnThis();
 		});
 
-		it('should 401 if no cookie is set', async () => {
+		/** Der Fork-Fallback sucht den Owner ueber den Rollen-Slug. */
+		const expectOwnerLookup = () =>
+			expect(userRepository.findOne).toHaveBeenCalledWith(
+				expect.objectContaining({ where: { role: { slug: GLOBAL_OWNER_ROLE.slug } } }),
+			);
+
+		it('should fall back to the instance owner if no cookie is set', async () => {
 			const req = mockReq();
 			req.cookies[AUTH_COOKIE_NAME] = undefined;
+			userRepository.findOne.mockResolvedValue(owner);
 
 			const middleware = authService.createAuthMiddleware({ allowSkipMFA: true });
 
 			await middleware(req, res, next);
 
 			expect(invalidAuthTokenRepository.existsBy).not.toHaveBeenCalled();
-			expect(next).not.toHaveBeenCalled();
-			expect(res.status).toHaveBeenCalledWith(401);
+			expectOwnerLookup();
+			expect(req.user).toBe(owner);
+			expect(next).toHaveBeenCalled();
+			expect(res.status).not.toHaveBeenCalled();
 		});
 
-		it('should 401 and clear the cookie if the JWT is expired', async () => {
+		it('should clear the cookie and fall back to the owner if the JWT is expired', async () => {
 			const req = mockReq();
 			req.cookies[AUTH_COOKIE_NAME] = validToken;
 			invalidAuthTokenRepository.existsBy.mockResolvedValue(false);
+			userRepository.findOne.mockResolvedValue(owner);
 			vi.advanceTimersByTime(365 * Time.days.toMilliseconds);
 
 			const middleware = authService.createAuthMiddleware({ allowSkipMFA: true });
 
 			await middleware(req, res, next);
 
-			expect(invalidAuthTokenRepository.existsBy).toHaveBeenCalled();
-			expect(userRepository.findOne).not.toHaveBeenCalled();
-			expect(next).not.toHaveBeenCalled();
-			expect(res.status).toHaveBeenCalledWith(401);
 			expect(res.clearCookie).toHaveBeenCalledWith(AUTH_COOKIE_NAME);
+			expectOwnerLookup();
+			expect(req.user).toBe(owner);
+			expect(next).toHaveBeenCalled();
+			expect(res.status).not.toHaveBeenCalled();
 		});
 
-		it('should 401 and clear the cookie if the JWT has been invalidated', async () => {
+		it('should clear the cookie and fall back to the owner if the JWT has been invalidated', async () => {
 			const req = mockReq();
 			req.cookies[AUTH_COOKIE_NAME] = validToken;
 			invalidAuthTokenRepository.existsBy.mockResolvedValue(true);
+			userRepository.findOne.mockResolvedValue(owner);
 
 			const middleware = authService.createAuthMiddleware({ allowSkipMFA: true });
 
 			await middleware(req, res, next);
 
-			expect(invalidAuthTokenRepository.existsBy).toHaveBeenCalled();
-			expect(userRepository.findOne).not.toHaveBeenCalled();
-			expect(next).not.toHaveBeenCalled();
-			expect(res.status).toHaveBeenCalledWith(401);
 			expect(res.clearCookie).toHaveBeenCalledWith(AUTH_COOKIE_NAME);
+			expect(req.user).toBe(owner);
+			expect(next).toHaveBeenCalled();
+		});
+
+		it('should leave req.user empty if the instance has no owner', async () => {
+			const req = mockReq();
+			req.cookies[AUTH_COOKIE_NAME] = undefined;
+			userRepository.findOne.mockResolvedValue(null);
+
+			const middleware = authService.createAuthMiddleware({ allowSkipMFA: true });
+
+			await middleware(req, res, next);
+
+			expect(req.user).toBeUndefined();
+			expect(next).toHaveBeenCalled();
+		});
+
+		it('should leave req.user empty if the owner is disabled', async () => {
+			const req = mockReq();
+			req.cookies[AUTH_COOKIE_NAME] = undefined;
+			userRepository.findOne.mockResolvedValue(mockUser({ disabled: true }));
+
+			const middleware = authService.createAuthMiddleware({ allowSkipMFA: true });
+
+			await middleware(req, res, next);
+
+			expect(req.user).toBeUndefined();
+			expect(next).toHaveBeenCalled();
+		});
+
+		it('should keep the cookie user and skip the owner fallback', async () => {
+			const req = mockReq();
+			req.cookies[AUTH_COOKIE_NAME] = validToken;
+			invalidAuthTokenRepository.existsBy.mockResolvedValue(false);
+			userRepository.findOne.mockResolvedValue(user);
+
+			const middleware = authService.createAuthMiddleware({ allowSkipMFA: true });
+
+			await middleware(req, res, next);
+
+			expect(req.user).toBe(user);
+			expect(userRepository.findOne).toHaveBeenCalledTimes(1);
+			expect(next).toHaveBeenCalled();
+			expect(res.clearCookie).not.toHaveBeenCalled();
 		});
 
 		it('should 401 but not clear the cookie if 2FA is enforced and not configured for the user', async () => {
@@ -184,8 +240,6 @@ describe('AuthService', () => {
 
 			await middleware(req, res, next);
 
-			expect(invalidAuthTokenRepository.existsBy).toHaveBeenCalled();
-			expect(userRepository.findOne).toHaveBeenCalled();
 			expect(next).not.toHaveBeenCalled();
 			expect(res.status).toHaveBeenCalledWith(401);
 			expect(res.clearCookie).not.toHaveBeenCalledWith();
@@ -211,139 +265,6 @@ describe('AuthService', () => {
 			});
 		});
 
-		describe('allowSkipPreviewAuth', () => {
-			let originalPreviewMode: string | undefined;
-
-			beforeEach(() => {
-				// Store original value
-				originalPreviewMode = process.env.N8N_PREVIEW_MODE;
-				// Reset mocks
-				vi.resetAllMocks();
-				res.status.mockReturnThis();
-			});
-
-			afterEach(() => {
-				// Restore original value
-				if (originalPreviewMode === undefined) {
-					delete process.env.N8N_PREVIEW_MODE;
-				} else {
-					process.env.N8N_PREVIEW_MODE = originalPreviewMode;
-				}
-			});
-
-			it('should skip authentication when allowSkipPreviewAuth is true and preview mode is enabled', async () => {
-				process.env.N8N_PREVIEW_MODE = 'true';
-				const req = mockReq();
-				req.cookies[AUTH_COOKIE_NAME] = undefined;
-
-				const middleware = authService.createAuthMiddleware({
-					allowSkipMFA: true,
-					allowSkipPreviewAuth: true,
-				});
-
-				await middleware(req, res, next);
-
-				expect(invalidAuthTokenRepository.existsBy).not.toHaveBeenCalled();
-				expect(userRepository.findOne).not.toHaveBeenCalled();
-				expect(next).toHaveBeenCalled();
-				expect(res.status).not.toHaveBeenCalled();
-			});
-
-			it('should NOT skip authentication when allowSkipPreviewAuth is false even in preview mode', async () => {
-				process.env.N8N_PREVIEW_MODE = 'true';
-				const req = mockReq();
-				req.cookies[AUTH_COOKIE_NAME] = undefined;
-
-				const middleware = authService.createAuthMiddleware({
-					allowSkipMFA: true,
-					allowSkipPreviewAuth: false,
-				});
-
-				await middleware(req, res, next);
-
-				expect(invalidAuthTokenRepository.existsBy).not.toHaveBeenCalled();
-				expect(userRepository.findOne).not.toHaveBeenCalled();
-				expect(next).not.toHaveBeenCalled();
-				expect(res.status).toHaveBeenCalledWith(401);
-			});
-
-			it('should NOT skip authentication when allowSkipPreviewAuth is true but preview mode is disabled', async () => {
-				process.env.N8N_PREVIEW_MODE = 'false';
-				const req = mockReq();
-				req.cookies[AUTH_COOKIE_NAME] = undefined;
-
-				const middleware = authService.createAuthMiddleware({
-					allowSkipMFA: true,
-					allowSkipPreviewAuth: true,
-				});
-
-				await middleware(req, res, next);
-
-				expect(invalidAuthTokenRepository.existsBy).not.toHaveBeenCalled();
-				expect(userRepository.findOne).not.toHaveBeenCalled();
-				expect(next).not.toHaveBeenCalled();
-				expect(res.status).toHaveBeenCalledWith(401);
-			});
-
-			it('should NOT skip authentication when allowSkipPreviewAuth is true but preview mode is undefined', async () => {
-				delete process.env.N8N_PREVIEW_MODE;
-				const req = mockReq();
-				req.cookies[AUTH_COOKIE_NAME] = undefined;
-
-				const middleware = authService.createAuthMiddleware({
-					allowSkipMFA: true,
-					allowSkipPreviewAuth: true,
-				});
-
-				await middleware(req, res, next);
-
-				expect(invalidAuthTokenRepository.existsBy).not.toHaveBeenCalled();
-				expect(userRepository.findOne).not.toHaveBeenCalled();
-				expect(next).not.toHaveBeenCalled();
-				expect(res.status).toHaveBeenCalledWith(401);
-			});
-
-			it('should still process valid authentication normally in preview mode with allowSkipPreviewAuth true', async () => {
-				process.env.N8N_PREVIEW_MODE = 'true';
-				const req = mockReq();
-				req.cookies[AUTH_COOKIE_NAME] = validToken;
-				invalidAuthTokenRepository.existsBy.mockResolvedValue(false);
-				userRepository.findOne.mockResolvedValue(user);
-
-				const middleware = authService.createAuthMiddleware({
-					allowSkipMFA: true,
-					allowSkipPreviewAuth: true,
-				});
-
-				await middleware(req, res, next);
-
-				expect(invalidAuthTokenRepository.existsBy).toHaveBeenCalled();
-				expect(userRepository.findOne).toHaveBeenCalled();
-				expect(req.user).toBe(user);
-				expect(next).toHaveBeenCalled();
-				expect(res.status).not.toHaveBeenCalled();
-			});
-
-			it('should handle authentication errors normally in preview mode with allowSkipPreviewAuth true', async () => {
-				process.env.N8N_PREVIEW_MODE = 'true';
-				const req = mockReq();
-				req.cookies[AUTH_COOKIE_NAME] = 'invalid-token';
-				invalidAuthTokenRepository.existsBy.mockResolvedValue(false);
-
-				const middleware = authService.createAuthMiddleware({
-					allowSkipMFA: true,
-					allowSkipPreviewAuth: true,
-				});
-
-				await middleware(req, res, next);
-
-				expect(invalidAuthTokenRepository.existsBy).toHaveBeenCalled();
-				expect(res.clearCookie).toHaveBeenCalledWith(AUTH_COOKIE_NAME);
-				expect(next).toHaveBeenCalled(); // Should still call next() due to preview mode skip
-				expect(res.status).not.toHaveBeenCalled();
-			});
-		});
-
 		describe('allowUnauthenticated', () => {
 			it('should populate the user info if the token is valid', async () => {
 				const req = mockReq();
@@ -358,56 +279,16 @@ describe('AuthService', () => {
 
 				await middleware(req, res, next);
 
-				expect(invalidAuthTokenRepository.existsBy).toHaveBeenCalled();
-				expect(userRepository.findOne).toHaveBeenCalled();
 				expect(req.user).toBe(user);
 				expect(next).toHaveBeenCalled();
 				expect(res.clearCookie).not.toHaveBeenCalled();
 			});
 
-			it('should clear the cookie if the token is expired', async () => {
-				const req = mockReq();
-				req.cookies[AUTH_COOKIE_NAME] = validToken;
-				invalidAuthTokenRepository.existsBy.mockResolvedValue(false);
-				vi.advanceTimersByTime(365 * Time.days.toMilliseconds);
-
-				const middleware = authService.createAuthMiddleware({
-					allowSkipMFA: false,
-					allowUnauthenticated: true,
-				});
-
-				await middleware(req, res, next);
-
-				expect(invalidAuthTokenRepository.existsBy).toHaveBeenCalled();
-				expect(userRepository.findOne).not.toHaveBeenCalled();
-				expect(req.user).toBeUndefined();
-				expect(next).toHaveBeenCalled();
-				expect(res.clearCookie).toHaveBeenCalledWith(AUTH_COOKIE_NAME);
-			});
-
-			it('should clear the cookie if the token has been invalidated', async () => {
-				const req = mockReq();
-				req.cookies[AUTH_COOKIE_NAME] = validToken;
-				invalidAuthTokenRepository.existsBy.mockResolvedValue(true);
-
-				const middleware = authService.createAuthMiddleware({
-					allowSkipMFA: false,
-					allowUnauthenticated: true,
-				});
-
-				await middleware(req, res, next);
-
-				expect(invalidAuthTokenRepository.existsBy).toHaveBeenCalled();
-				expect(userRepository.findOne).not.toHaveBeenCalled();
-				expect(req.user).toBeUndefined();
-				expect(next).toHaveBeenCalled();
-				expect(res.clearCookie).toHaveBeenCalledWith(AUTH_COOKIE_NAME);
-			});
-
-			it('should not populate the user info if the token is invalid', async () => {
+			it('should fall back to the owner if the token is invalid', async () => {
 				const req = mockReq();
 				req.cookies[AUTH_COOKIE_NAME] = 'invalid-token';
 				invalidAuthTokenRepository.existsBy.mockResolvedValue(false);
+				userRepository.findOne.mockResolvedValue(owner);
 
 				const middleware = authService.createAuthMiddleware({
 					allowSkipMFA: false,
@@ -416,53 +297,9 @@ describe('AuthService', () => {
 
 				await middleware(req, res, next);
 
-				expect(invalidAuthTokenRepository.existsBy).toHaveBeenCalled();
-				expect(userRepository.findOne).not.toHaveBeenCalled();
-				expect(req.user).toBeUndefined();
-				expect(next).toHaveBeenCalled();
 				expect(res.clearCookie).toHaveBeenCalledWith(AUTH_COOKIE_NAME);
-			});
-
-			it('should not populate the user info if the token is not set', async () => {
-				const req = mockReq();
-				req.cookies[AUTH_COOKIE_NAME] = undefined;
-
-				const middleware = authService.createAuthMiddleware({
-					allowSkipMFA: false,
-					allowUnauthenticated: true,
-				});
-
-				await middleware(req, res, next);
-
-				expect(invalidAuthTokenRepository.existsBy).not.toHaveBeenCalled();
-				expect(userRepository.findOne).not.toHaveBeenCalled();
-				expect(req.user).toBeUndefined();
+				expect(req.user).toBe(owner);
 				expect(next).toHaveBeenCalled();
-				expect(res.clearCookie).not.toHaveBeenCalled();
-			});
-
-			it('should clear cookie if MFA required and not used', async () => {
-				const userWithMfa = mockUser({ mfaEnabled: true, mfaSecret: 'secret' });
-
-				const req = mockReq();
-				req.cookies[AUTH_COOKIE_NAME] = validToken; // validToken has usedMfa: false
-
-				invalidAuthTokenRepository.existsBy.mockResolvedValue(false);
-				userRepository.findOne.mockResolvedValue(userWithMfa);
-				mfaService.isMFAEnforced.mockResolvedValue(true);
-
-				const middleware = authService.createAuthMiddleware({
-					allowSkipMFA: false,
-					allowUnauthenticated: true,
-				});
-
-				await middleware(req, res, next);
-
-				expect(invalidAuthTokenRepository.existsBy).toHaveBeenCalled();
-				expect(userRepository.findOne).toHaveBeenCalled();
-				expect(req.user).toBeUndefined();
-				expect(next).toHaveBeenCalled();
-				expect(res.clearCookie).toHaveBeenCalledWith(AUTH_COOKIE_NAME);
 			});
 
 			it('should skip user when MFA enforced and user has no MFA', async () => {
@@ -480,41 +317,12 @@ describe('AuthService', () => {
 
 				await middleware(req, res, next);
 
-				expect(invalidAuthTokenRepository.existsBy).toHaveBeenCalled();
-				expect(userRepository.findOne).toHaveBeenCalled();
+				// Der MFA-Enrollment-Pfad kehrt vor dem Fork-Fallback zurueck, damit ein
+				// halb authentifizierter Request keine Owner-Rechte erbt.
 				expect(req.user).toBeUndefined();
 				expect(next).toHaveBeenCalled();
 				expect(res.status).not.toHaveBeenCalled();
 				expect(res.clearCookie).not.toHaveBeenCalled();
-			});
-
-			it('should work correctly when both allowUnauthenticated and allowSkipPreviewAuth are true in preview mode', async () => {
-				const originalPreviewMode = process.env.N8N_PREVIEW_MODE;
-				process.env.N8N_PREVIEW_MODE = 'true';
-
-				const req = mockReq();
-				req.cookies[AUTH_COOKIE_NAME] = undefined;
-
-				const middleware = authService.createAuthMiddleware({
-					allowSkipMFA: false,
-					allowUnauthenticated: true,
-					allowSkipPreviewAuth: true,
-				});
-
-				await middleware(req, res, next);
-
-				expect(invalidAuthTokenRepository.existsBy).not.toHaveBeenCalled();
-				expect(userRepository.findOne).not.toHaveBeenCalled();
-				expect(req.user).toBeUndefined();
-				expect(next).toHaveBeenCalled();
-				expect(res.status).not.toHaveBeenCalled();
-
-				// Restore original value
-				if (originalPreviewMode === undefined) {
-					delete process.env.N8N_PREVIEW_MODE;
-				} else {
-					process.env.N8N_PREVIEW_MODE = originalPreviewMode;
-				}
 			});
 		});
 	});
