@@ -234,6 +234,19 @@ sich unter Node 26 nicht bauen. Es ist eine transitive Abhängigkeit des
 Kafka-Nodes von `n8n-nodes-base` und wird von ErpApi nicht benutzt — ohne
 gebautes Binary fällt nur dieser eine Node aus, der Start bleibt intakt.
 
+## Interne n8n-Editor-EXE
+
+Die Auslieferung enthält keinen Editor. Mitarbeiter öffnen den Editor des Forks über
+`ORGAMAX/n8n-editor` (Wails-Fenster mit Reverse-Proxy auf die lokale n8n-Instanz). Aufbau und
+Verhalten: [ORGAMAX/n8n-editor/README.md](n8n-editor/README.md).
+
+```bash
+task orgamax:pack          # nach orgamax:build; erzeugt .deploy/n8n-editor-ui-<version>.tgz
+task orgamax:n8n-editor    # -> ORGAMAX/n8n-editor/dist/n8n-editor.exe
+```
+
+Die EXE ist nie Teil von Installer oder Server-Archiven und geht nicht an Kunden.
+
 ## Was sich gegenüber v2.5.0 geändert hat
 
 Der letzte Deploy (`C:\WORKSPACE\packages\2.5.0`) enthielt 42 Packages, der

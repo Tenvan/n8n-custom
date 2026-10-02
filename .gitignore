@@ -100,6 +100,10 @@ packages/@n8n/db/src/migrations/postgresdb/index.ts
 
 # Deploy-Artefakte (scripts/deploy-packages.mjs)
 .deploy/
+# n8n-Editor-EXE: entpackte Editor-Dist und Windows-Ressource sind Build-Artefakte
+ORGAMAX/n8n-editor/editor-dist/*
+!ORGAMAX/n8n-editor/editor-dist/.gitkeep
+*.syso
 install.log
 deploy.log
 

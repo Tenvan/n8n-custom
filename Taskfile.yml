@@ -51,6 +51,22 @@ tasks:
       # Ein pnpm install in ErpApi zerstört Lockfile und node_modules-Layout.
       # Details: ORGAMAX/ERPAPI_README.MD, Abschnitt "Install in ErpApi".
 
+  orgamax:n8n-editor:
+    desc: >-
+      Baut die interne n8n-Editor-EXE (ORGAMAX/n8n-editor) mit dem editor-ui-Tarball aus
+      .deploy -> ORGAMAX/n8n-editor/dist/n8n-editor.exe. Braucht vorher orgamax:pack. Nie an Kunden ausgeben.
+    vars:
+      EDITOR_TGZ:
+        sh: |
+          node -e "const f=require('fs').readdirSync('.deploy').filter(n=>/^n8n-editor-ui-\d.*\.tgz$/.test(n));if(f.length!==1){console.error('Erwartet genau einen n8n-editor-ui-Tarball in .deploy, gefunden: '+f.length+' (zuerst task orgamax:pack)');process.exit(1)}console.log(f[0])"
+      N8N_VERSION: '{{.EDITOR_TGZ | trimPrefix "n8n-editor-ui-" | trimSuffix ".tgz"}}'
+    cmds:
+      - go run -C ORGAMAX/n8n-editor ./cmd/unpack "{{.ROOT_DIR}}/.deploy/{{.EDITOR_TGZ}}" editor-dist
+      # App-Icon als .syso (gitignored), das go build im Paketverzeichnis selbst einbindet.
+      - go run -C ORGAMAX/n8n-editor ./cmd/winres build/windows/icon.ico n8n-editor-res_windows_amd64.syso
+      # Wails ohne CLI: dieselben Tags und das GUI-Subsystem wie `wails build`.
+      - go build -C ORGAMAX/n8n-editor -trimpath -tags desktop,production -ldflags "-H windowsgui -s -w -X main.version={{.N8N_VERSION}}" -o "{{.ROOT_DIR}}/ORGAMAX/n8n-editor/dist/n8n-editor.exe" .
+
   orgamax:dry-run:
     desc: Listet die zu packenden orgaMAX-Pakete ohne Änderung auf
     cmds:

@@ -1,0 +1,173 @@
+<!doctype html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>n8n-Editor</title>
+<style>
+  /* Werte aus apps/frontend/src/themes/mobile-tokens.scss (Primary/Secondary/Status), offline ohne Webfonts. */
+  :root {
+    --bg: #f6f7fa; --bg-glow: #ecf1ff; --card: #ffffff; --line: #dee2ed;
+    --text: #1b2737; --text-2: #47515d; --text-3: #7a8797;
+    --accent: #4277fc; --accent-press: #355fca; --accent-soft: #ecf1ff;
+    --ok: #89c958; --warn: #e8b640; --err: #fa6e6e; --err-soft: #fff1f1; --warn-soft: #fdf6e3;
+    --logo-body: #1f2e55; --logo-accent: #4277fc;
+    --code-bg: #f6f7fa;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #05111e; --bg-glow: #13233d; --card: #0e1b2c; --line: #243349;
+      --text: #f6f7fa; --text-2: #c5c9d4; --text-3: #a0abb8;
+      --accent: #6892fd; --accent-press: #8eadfd; --accent-soft: #16264a;
+      --err-soft: #3a1c22; --warn-soft: #3a3019;
+      --logo-body: #ffffff; --logo-accent: #82b1ff;
+      --code-bg: #0a1524;
+    }
+  }
+  * { box-sizing: border-box; }
+  html, body { height: 100%; margin: 0; }
+  body {
+    display: grid; place-items: center; padding: 24px;
+    background: radial-gradient(1200px 600px at 50% -10%, var(--bg-glow), var(--bg) 70%);
+    color: var(--text);
+    font: 15px/1.5 "Source Sans 3", "Source Sans Pro", "Segoe UI", system-ui, sans-serif;
+  }
+  main {
+    width: min(560px, 100%); background: var(--card); border: 1px solid var(--line);
+    border-radius: 12px; padding: 36px 36px 28px; box-shadow: 0 12px 40px rgb(5 17 30 / 0.10);
+  }
+  header { display: flex; align-items: center; gap: 16px; }
+  header svg { width: 44px; height: 55px; flex: none; }
+  .logo-body { fill: var(--logo-body); } .logo-accent { fill: var(--logo-accent); }
+  h1 { margin: 0; font: 600 26px/1.2 Cairo, "Segoe UI Semibold", "Segoe UI", sans-serif; letter-spacing: -0.01em; }
+  .sub { margin: 2px 0 0; color: var(--text-3); font-size: 14px; }
+  dl { display: grid; grid-template-columns: auto 1fr; gap: 6px 16px; margin: 28px 0 20px; font-size: 14px; }
+  dt { color: var(--text-3); }
+  dd { margin: 0; color: var(--text-2); font-family: Consolas, "Cascadia Mono", monospace; word-break: break-all; }
+  .status { display: flex; gap: 14px; padding: 16px; border-radius: 10px; background: var(--accent-soft); }
+  .status[data-state="error"] { background: var(--err-soft); }
+  .status[data-state="warn"] { background: var(--warn-soft); }
+  .icon { width: 26px; height: 26px; flex: none; margin-top: 1px; }
+  .spinner { border: 3px solid var(--line); border-top-color: var(--accent); border-radius: 50%; animation: spin 0.9s linear infinite; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  @media (prefers-reduced-motion: reduce) { .spinner { animation-duration: 3s; } }
+  .status h2 { margin: 0; font-size: 16px; font-weight: 600; }
+  .status p { margin: 4px 0 0; color: var(--text-2); }
+  pre {
+    margin: 10px 0 0; padding: 10px 12px; border-radius: 6px; background: var(--code-bg);
+    border: 1px solid var(--line); color: var(--text-2); font: 12.5px/1.45 Consolas, "Cascadia Mono", monospace;
+    white-space: pre-wrap; word-break: break-word;
+  }
+  .actions { display: flex; align-items: center; gap: 12px; margin-top: 20px; min-height: 40px; }
+  button {
+    font: inherit; font-weight: 600; padding: 9px 18px; border-radius: 6px; border: 0; cursor: pointer;
+    background: var(--accent); color: #fff;
+  }
+  button:hover { background: var(--accent-press); }
+  button:focus-visible { outline: 3px solid var(--accent-soft); outline-offset: 2px; }
+  .countdown { color: var(--text-3); font-size: 14px; }
+  footer { margin-top: 28px; padding-top: 14px; border-top: 1px solid var(--line); color: var(--text-3); font-size: 13px; }
+  [hidden] { display: none !important; }
+</style>
+</head>
+<body>
+<main>
+  <header>
+    <svg viewBox="0 0 64.456 80" aria-hidden="true">
+      <path class="logo-body" transform="translate(0 28.431)" d="M32.035,51.568h-.061a4.162,4.162,0,0,1-.705-.056,21.094,21.094,0,0,1-7.558-3.03L23.3,48.23c-.508-.293-3.383-1.926-6.609-3.758-3.52-2-7.453-4.233-9.2-5.229-.149-.085-.359-.193-.607-.322-2.3-1.195-4.637-2.524-5.758-4.466C-.127,32.286-.039,29.039.039,27.9.044,26.208.1,5.937.1,4.112A4.072,4.072,0,0,1,1.273,1.138,3.977,3.977,0,0,1,4.111,0h0A7.7,7.7,0,0,1,7.935,1.322C15,5.332,28.67,13.069,30.408,13.986a12.622,12.622,0,0,1,1.820,1.169,12.621,12.621,0,0,1,1.820-1.169c1.737-.918,15.405-8.655,22.473-12.666A7.712,7.712,0,0,1,60.345,0a3.974,3.974,0,0,1,4.010,4.113c0,1.825.057,22.095.062,23.792.077,1.136.165,4.382-1.087,6.551-1.121,1.943-3.460,3.271-5.758,4.466-.248.129-.459.237-.607.322-1.741.995-5.669,3.225-9.186,5.223-3.230,1.835-6.113,3.472-6.620,3.764l-.415.253A22.025,22.025,0,0,1,32.8,51.515a4.381,4.381,0,0,1-.7.054Zm5.064-31.8a4.947,4.947,0,0,0-1.605,1.277V44c.5-.279,1.1-.631,1.823-1.075l.575-.348c.51-.295,3.411-1.942,6.66-3.787,3.512-1.994,7.432-4.221,9.17-5.214.206-.117.494-.269.836-.447a14.445,14.445,0,0,0,3.15-1.994,9.806,9.806,0,0,0,.184-2.853l-.01-.242S57.846,14.96,57.829,8.09C52.6,11.053,38.965,18.777,37.1,19.764ZM6.571,28.035l-.01.242A8.586,8.586,0,0,0,6.8,31.211a15.948,15.948,0,0,0,3.1,1.912c.342.178.631.329.836.447,1.74.995,5.668,3.225,9.182,5.221,3.245,1.843,6.139,3.487,6.649,3.781l.575.348c.72.444,1.321.8,1.822,1.074V21.04a4.942,4.942,0,0,0-1.605-1.277c-1.866-.986-15.5-8.711-20.73-11.674C6.609,14.961,6.571,28.035,6.571,28.035Z"/>
+      <path class="logo-accent" transform="translate(55.359 23.419) rotate(115)" d="M21.948,15.277l-.591,7.429L0,7.407S.56.308.578,0C.873.209,21.948,15.277,21.948,15.277Z"/>
+      <path class="logo-accent" transform="translate(38.948 21.604) rotate(115)" d="M15.793,10.906l-.564,7.33L0,7.282S.585.512.609,0C.9.2,15.793,10.906,15.793,10.906Z"/>
+      <path class="logo-accent" transform="translate(39.409 10.763) rotate(115.976)" d="M25.262,17.243l-.456,7.33S6.2,11.758,4.771,10.751c-1.094-.771-2.781-1.89-3-2.1A5.53,5.53,0,0,1,.006,5.028,46.255,46.255,0,0,1,.284,0C.838.442,25.262,17.243,25.262,17.243Z"/>
+    </svg>
+    <div>
+      <h1>n8n-Editor</h1>
+      <p class="sub">Interne Workflow-Bearbeitung gegen die lokale ErpApi</p>
+    </div>
+  </header>
+
+  <dl>
+    <dt>Ziel</dt><dd id="target">–</dd>
+    <dt>Editor-Version</dt><dd id="version">–</dd>
+  </dl>
+
+  <section class="status" id="status" data-state="checking" aria-live="polite">
+    <div class="icon" id="icon"></div>
+    <div>
+      <h2 id="title">Verbindung wird geprüft …</h2>
+      <p id="hint" hidden></p>
+      <pre id="detail" hidden></pre>
+    </div>
+  </section>
+
+  <div class="actions">
+    <button id="retry" type="button" hidden>Erneut prüfen</button>
+    <button id="open" type="button" hidden>Editor öffnen</button>
+    <span class="countdown" id="countdown"></span>
+  </div>
+
+  <footer>Nur für orgaMAX-Mitarbeiter. Beim Kunden gibt es keinen n8n-Editor.</footer>
+</main>
+
+<script>
+  const $ = (id) => document.getElementById(id);
+  const icons = {
+    checking: '<div class="icon spinner"></div>',
+    ok: '<svg class="icon" viewBox="0 0 24 24"><circle cx="12" cy="12" r="11" fill="var(--ok)"/><path d="M7 12.5l3.2 3.2L17 9" stroke="#fff" stroke-width="2.4" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg>',
+    warn: '<svg class="icon" viewBox="0 0 24 24"><circle cx="12" cy="12" r="11" fill="var(--warn)"/><path d="M12 6.5v7M12 17.2v.3" stroke="#fff" stroke-width="2.4" stroke-linecap="round"/></svg>',
+    error: '<svg class="icon" viewBox="0 0 24 24"><circle cx="12" cy="12" r="11" fill="var(--err)"/><path d="M8.5 8.5l7 7M15.5 8.5l-7 7" stroke="#fff" stroke-width="2.4" stroke-linecap="round"/></svg>',
+  };
+  const RETRY_SECONDS = 5, WARN_SECONDS = 5;
+
+  // Rücksprung nur auf eigene Editor-Pfade, nie auf den Launcher selbst oder fremde Origins.
+  const next = (() => {
+    try {
+      const u = new URL(new URLSearchParams(location.search).get('next') || '/', location.origin);
+      if (u.origin === location.origin && !u.pathname.startsWith('/__launcher')) return u.pathname + u.search + u.hash;
+    } catch {}
+    return '/';
+  })();
+
+  let timer;
+  function countdown(seconds, label, done) {
+    clearInterval(timer);
+    let left = seconds;
+    const tick = () => { $('countdown').textContent = `${label} in ${left} s`; };
+    tick();
+    timer = setInterval(() => { if (--left <= 0) { clearInterval(timer); done(); } else tick(); }, 1000);
+  }
+
+  function render(s) {
+    $('status').dataset.state = s.state;
+    $('icon').outerHTML = icons[s.state].replace('class="icon', 'id="icon" class="icon');
+    $('title').textContent = s.title;
+    $('hint').hidden = !s.hint; $('hint').textContent = s.hint || '';
+    $('detail').hidden = !s.detail; $('detail').textContent = s.detail || '';
+    if (s.target) $('target').textContent = s.target;
+    if (s.version) $('version').textContent = s.version;
+    $('retry').hidden = s.state !== 'error';
+    $('open').hidden = s.state !== 'warn';
+    $('countdown').textContent = '';
+    if (s.state === 'ok') setTimeout(openEditor, 700);
+    if (s.state === 'warn') countdown(WARN_SECONDS, 'Editor öffnet', openEditor);
+    if (s.state === 'error') countdown(RETRY_SECONDS, 'Neuer Versuch', check);
+  }
+
+  function openEditor() { clearInterval(timer); location.replace(next); }
+
+  async function check() {
+    clearInterval(timer);
+    render({ state: 'checking', title: 'Verbindung wird geprüft …' });
+    try {
+      const r = await fetch('status', { cache: 'no-store' });
+      render(await r.json());
+    } catch (e) {
+      render({ state: 'error', title: 'Launcher antwortet nicht', detail: String(e) });
+    }
+  }
+
+  $('retry').addEventListener('click', check);
+  $('open').addEventListener('click', openEditor);
+  check();
+</script>
+</body>
+</html>
