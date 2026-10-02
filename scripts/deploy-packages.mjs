@@ -18,7 +18,12 @@ const deployDir = path.join(rootDir, '.deploy');
 const deployDirArg = deployDir.split(path.sep).join('/');
 const dryRun = process.argv.includes('--dry-run');
 const execFileAsync = promisify(execFile);
-const pnpmCommand = 'pnpm';
+// Läuft das Skript über pnpm, zeigt npm_execpath auf dessen Einstieg (JS-Datei oder EXE). Den
+// starten wir direkt; execFile('pnpm') nähme auf Windows sonst die erste pnpm.exe im PATH.
+const pnpmEntry = process.env.npm_execpath?.includes('pnpm') ? process.env.npm_execpath : undefined;
+const pnpmIsScript = pnpmEntry !== undefined && /\.[cm]?js$/.test(pnpmEntry);
+const pnpmCommand = pnpmEntry === undefined ? 'pnpm' : pnpmIsScript ? process.execPath : pnpmEntry;
+const pnpmArgs = (args) => (pnpmIsScript ? [pnpmEntry, ...args] : args);
 
 $.verbose = false;
 
@@ -45,7 +50,7 @@ const formatSize = (bytes) => {
 async function findPublishablePackages() {
 	const manifests = await glob('packages/**/package.json', {
 		cwd: rootDir,
-		ignore: ['**/node_modules/**', '**/dist/**', '**/template/**'],
+		ignore: ['**/node_modules/**', '**/dist/**', '**/template/**', '**/fixtures/**'],
 	});
 
 	const packages = [];
@@ -119,7 +124,7 @@ async function main() {
 		for (const pkg of packages) {
 			const expected = tarballName(pkg);
 			try {
-				await execFileAsync(pnpmCommand, ['pack', '--pack-destination', deployDirArg], {
+				await execFileAsync(pnpmCommand, pnpmArgs(['pack', '--pack-destination', deployDirArg]), {
 					cwd: pkg.dir,
 					env: process.env,
 					encoding: 'utf8',

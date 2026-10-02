@@ -30,7 +30,7 @@ async function findPublishablePackageNames() {
 	async function visit(dir) {
 		for (const entry of await readdir(dir, { withFileTypes: true })) {
 			if (entry.isDirectory()) {
-				if (!['node_modules', 'dist', 'template'].includes(entry.name)) {
+				if (!['node_modules', 'dist', 'template', 'fixtures'].includes(entry.name)) {
 					await visit(path.join(dir, entry.name));
 				}
 				continue;
