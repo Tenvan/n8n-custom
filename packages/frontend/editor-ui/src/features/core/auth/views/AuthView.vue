@@ -1,5 +1,4 @@
 <script setup lang="ts">
-import SSOLogin from '@/features/settings/sso/components/SSOLogin.vue';
 import type { FormFieldValueUpdate, IFormBoxConfig } from '@/Interface';
 import type { EmailOrLdapLoginIdAndPassword } from './SigninView.vue';
 import OrgaMaxLogo from '@/app/components/OrgaMaxLogo.vue';
@@ -7,14 +6,15 @@ import OrgaMaxLogo from '@/app/components/OrgaMaxLogo.vue';
 import { N8nFormBox, N8nText } from '@n8n/design-system';
 withDefaults(
 	defineProps<{
-		form: IFormBoxConfig;
+		/** The standard form box. Omit it when the default slot renders the card instead. */
+		form?: IFormBoxConfig;
 		formLoading?: boolean;
 		subtitle?: string;
-		withSso?: boolean;
 	}>(),
 	{
+		form: undefined,
 		formLoading: false,
-		withSso: false,
+		subtitle: undefined,
 	},
 );
 
@@ -46,16 +46,17 @@ const onSecondaryClick = () => {
 			<N8nText size="large">{{ subtitle }}</N8nText>
 		</div>
 		<div :class="$style.formContainer">
-			<N8nFormBox
-				v-bind="form"
-				data-test-id="auth-form"
-				:button-loading="formLoading"
-				@secondary-click="onSecondaryClick"
-				@submit="onSubmit"
-				@update="onUpdate"
-			>
-				<SSOLogin v-if="withSso" />
-			</N8nFormBox>
+			<slot>
+				<N8nFormBox
+					v-if="form"
+					v-bind="form"
+					data-test-id="auth-form"
+					:button-loading="formLoading"
+					@secondary-click="onSecondaryClick"
+					@submit="onSubmit"
+					@update="onUpdate"
+				/>
+			</slot>
 		</div>
 	</div>
 </template>

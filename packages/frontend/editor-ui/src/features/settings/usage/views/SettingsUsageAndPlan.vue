@@ -54,6 +54,9 @@ const activationKey = ref('');
 const activationKeyInput = ref<HTMLInputElement | null>(null);
 const eulaModal = ref(false);
 const eulaUrl = ref('');
+// True while the EULA flow runs for a key that came from the URL, so we know we
+// must remove that key from the URL when the flow ends.
+const activationFromUrl = ref(false);
 
 // [CUSTOM-FORK] License Activation: Hide activation UI when Enterprise plan is already active
 const canUserActivateLicense = computed(() => {
@@ -101,12 +104,19 @@ const isEulaError = (error: unknown): error is EulaErrorResponse => {
 	return e.httpStatusCode === 400 && !!e.meta?.eulaUrl;
 };
 
+const clearKeyFromUrl = async () => {
+	if (!activationFromUrl.value) return;
+	activationFromUrl.value = false;
+	await router.replace({ query: {} });
+};
+
 const onLicenseActivation = async (eulaUri?: string) => {
 	try {
 		await usageStore.activateLicense(activationKey.value.trim(), eulaUri?.trim());
 		activationKeyModal.value = false;
 		eulaModal.value = false;
 		activationKey.value = '';
+		await clearKeyFromUrl();
 		showActivationSuccess();
 	} catch (error: unknown) {
 		// Check if error requires EULA acceptance using type guard
@@ -132,10 +142,11 @@ const onEulaAccept = async () => {
 	}
 };
 
-const onEulaCancel = () => {
+const onEulaCancel = async () => {
 	eulaModal.value = false;
 	eulaUrl.value = '';
 	activationKey.value = '';
+	await clearKeyFromUrl();
 };
 
 const onActivationCancel = () => {
@@ -157,14 +168,23 @@ onMounted(async () => {
 	// Remove query param activation logic since license is auto-activated
 	/*
 	if (route.query.key) {
+		const keyFromUrl = route.query.key as string;
 		try {
-			await usageStore.activateLicense(route.query.key as string);
+			await usageStore.activateLicense(keyFromUrl);
 			await router.replace({ query: {} });
 			showActivationSuccess();
 			usageStore.setLoading(false);
 			return;
 		} catch (error) {
-			showActivationError(error);
+			if (isEulaError(error)) {
+				// Keep the key from the URL so the EULA acceptance can send it again.
+				activationKey.value = keyFromUrl;
+				activationFromUrl.value = true;
+				eulaUrl.value = error.meta.eulaUrl;
+				eulaModal.value = true;
+			} else {
+				showActivationError(error);
+			}
 		}
 	}
 	*/

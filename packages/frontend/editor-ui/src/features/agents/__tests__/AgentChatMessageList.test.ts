@@ -12,6 +12,13 @@ vi.mock('@n8n/composables/useClipboard', () => ({
 }));
 
 vi.mock('@n8n/design-system', () => ({
+	N8nAiActivityStep: {
+		props: ['label', 'loading'],
+		data: () => ({ open: false }),
+		template:
+			'<section><button :aria-expanded="open" @click="open = !open">{{ label }}</button><div v-if="open"><slot /></div></section>',
+	},
+
 	N8nChatActions: {
 		props: ['content'],
 		setup: function setup(props: { content: string }) {
@@ -105,6 +112,15 @@ vi.mock('@/features/agents/components/interactive/InteractiveCard.vue', () => ({
 	},
 }));
 
+vi.mock('@/features/agents/components/AgentBudgetNoticeCard.vue', () => ({
+	default: {
+		template:
+			'<div data-testid="agent-budget-notice-card" :data-code="code" :data-can-increase="String(canIncrease)" :data-pending="String(pending)"><button data-testid="agent-budget-notice-increase" @click="$emit(\'increase\', { field: \'sessionCostCapUsd\', amount: 10 })" /></div>',
+		props: ['code', 'canIncrease', 'pending'],
+		emits: ['increase'],
+	},
+}));
+
 vi.mock('@n8n/i18n', () => ({
 	useI18n: () => ({
 		baseText: (key: string, opts?: { interpolate?: Record<string, unknown> }) => {
@@ -119,6 +135,39 @@ vi.mock('@n8n/i18n', () => ({
 }));
 
 describe('AgentChatMessageList', () => {
+	it('keeps signal expansion and order when the response gains tools and text', async () => {
+		const message: ChatMessage = {
+			id: 'wake:assistant',
+			executionId: 'wake',
+			role: 'assistant',
+			content: '',
+			backgroundJobSignal: {
+				tasks: [{ id: 'job-1', title: 'Research', kind: 'subagent', status: 'completed' }],
+			},
+		};
+		const wrapper = mount(AgentChatMessageList, {
+			props: { messages: [message], messagingState: 'idle' },
+		});
+		const row = () => wrapper.get('[data-testid="agent-chat-background-job-signal"]');
+		expect(row().get('button').attributes('aria-expanded')).toBe('false');
+		expect(wrapper.find('[data-test-id="agent-chat-message-copy"]').exists()).toBe(false);
+		await row().get('button').trigger('click');
+		await wrapper.setProps({
+			messages: [
+				{ ...message, toolCalls: [{ tool: 'search', toolCallId: 'search-1', state: 'done' }] },
+			],
+		});
+		expect(row().get('button').attributes('aria-expanded')).toBe('true');
+		await wrapper.setProps({ messages: [{ ...message, content: 'Done' }] });
+		expect(row().get('button').attributes('aria-expanded')).toBe('true');
+		expect(
+			wrapper
+				.findAll('[data-testid="agent-chat-background-job-signal"], [data-testid="markdown-chunk"]')
+				.map((el) => el.attributes('data-testid')),
+		).toEqual(['agent-chat-background-job-signal', 'markdown-chunk']);
+		expect(wrapper.findAll('[data-test-id="agent-chat-message-copy"]')).toHaveLength(1);
+	});
+
 	beforeEach(() => {
 		vi.clearAllMocks();
 	});
@@ -487,6 +536,107 @@ describe('AgentChatMessageList', () => {
 		expect(wrapper.find('[data-test-id="agent-chat-message-read-aloud"]').exists()).toBe(false);
 	});
 
+	it('renders the budget stop card when the stopped turn has only tool calls', () => {
+		// A budget stop lands on the current message; when the run had only made
+		// tool calls, that message folds into a toolRun group with no finalMessage.
+		const wrapper = mount(AgentChatMessageList, {
+			props: {
+				messages: [
+					{
+						id: 'assistant-tools',
+						role: 'assistant',
+						content: '',
+						toolCalls: [{ tool: 'search', toolCallId: 'tc-1', state: 'done' }],
+						status: 'success',
+						budgetNotices: [{ id: 'n1', code: 'budget.session' }],
+					} satisfies ChatMessage,
+				],
+				messagingState: 'idle',
+			},
+		});
+
+		const cards = wrapper.findAll('[data-testid="agent-budget-notice-card"]');
+		expect(cards).toHaveLength(1);
+		expect(cards[0].attributes('data-code')).toBe('budget.session');
+	});
+
+	it('renders budget notices from the final text message of a tool run once', () => {
+		const wrapper = mount(AgentChatMessageList, {
+			props: {
+				messages: [
+					{
+						id: 'assistant-tools',
+						role: 'assistant',
+						content: '',
+						toolCalls: [{ tool: 'search', toolCallId: 'tc-1', state: 'done' }],
+						status: 'success',
+						budgetNotices: [{ id: 'n1', code: 'budget.alert' }],
+					},
+					{
+						id: 'assistant-final',
+						role: 'assistant',
+						content: 'done',
+						status: 'success',
+						budgetNotices: [{ id: 'n2', code: 'budget.session' }],
+					} satisfies ChatMessage,
+				],
+				messagingState: 'idle',
+			},
+		});
+
+		const codes = wrapper
+			.findAll('[data-testid="agent-budget-notice-card"]')
+			.map((card) => card.attributes('data-code'));
+		expect(codes).toEqual(['budget.alert', 'budget.session']);
+	});
+
+	it('forwards the increase-budget event from a folded stop card', async () => {
+		const wrapper = mount(AgentChatMessageList, {
+			props: {
+				messages: [
+					{
+						id: 'assistant-tools',
+						role: 'assistant',
+						content: '',
+						toolCalls: [{ tool: 'search', toolCallId: 'tc-1', state: 'done' }],
+						status: 'success',
+						budgetNotices: [{ id: 'n1', code: 'budget.session' }],
+					} satisfies ChatMessage,
+				],
+				messagingState: 'idle',
+			},
+		});
+
+		await wrapper.get('[data-testid="agent-budget-notice-increase"]').trigger('click');
+		expect(wrapper.emitted('increase-budget')?.[0]).toEqual([
+			{ field: 'sessionCostCapUsd', amount: 10 },
+		]);
+	});
+
+	it('passes the increase permission and pending state to the notice cards', () => {
+		const wrapper = mount(AgentChatMessageList, {
+			props: {
+				messages: [
+					{
+						id: 'assistant-tools',
+						role: 'assistant',
+						content: '',
+						toolCalls: [{ tool: 'search', toolCallId: 'tc-1', state: 'done' }],
+						status: 'success',
+						budgetNotices: [{ id: 'n1', code: 'budget.session' }],
+					} satisfies ChatMessage,
+				],
+				messagingState: 'idle',
+				canIncreaseBudget: true,
+				budgetIncreasePending: true,
+			},
+		});
+
+		const card = wrapper.get('[data-testid="agent-budget-notice-card"]');
+		expect(card.attributes('data-can-increase')).toBe('true');
+		expect(card.attributes('data-pending')).toBe('true');
+	});
+
 	it('renders external-wait notice via toolRun path for suspended integration action', () => {
 		// isGroupable: role=assistant, toolCalls.length>0, content is empty → toolRun group
 		const wrapper = mount(AgentChatMessageList, {
@@ -692,43 +842,53 @@ describe('AgentChatMessageList', () => {
 		expect(wrapper.find('[data-testid="interactive-card-stub"]').exists()).toBe(false);
 	});
 
-	it('renders only reload-restored open cards that can still be resumed', () => {
-		const wrapper = mount(AgentChatMessageList, {
-			props: {
-				messages: [
-					{
-						id: 'assistant-open-cards',
-						role: 'assistant',
-						content: '',
-						interactives: [
-							{
-								toolName: 'chat_action',
-								toolCallId: 'tc-stale',
-								input: {
-									card: { components: [{ type: 'button', label: 'Old', value: 'old' }] },
+	it.each(['', 'Here is the request.'])(
+		'keeps active chat cards inline and tool approvals in the composer: %s',
+		(content) => {
+			const wrapper = mount(AgentChatMessageList, {
+				props: {
+					messages: [
+						{
+							id: 'assistant-open-cards',
+							role: 'assistant',
+							content,
+							toolCalls: [{ tool: 'send_message', toolCallId: 'tc-approval', state: 'suspended' }],
+							interactives: [
+								{
+									toolName: 'approval',
+									toolCallId: 'tc-approval',
+									runId: 'run-active',
+									input: { type: 'approval', toolName: 'send_message', args: {} },
 								},
-							},
-							{
-								toolName: 'chat_action',
-								toolCallId: 'tc-active',
-								runId: 'run-active',
-								input: {
-									card: { components: [{ type: 'button', label: 'Approve', value: 'approve' }] },
+								{
+									toolName: 'chat_action',
+									toolCallId: 'tc-stale',
+									input: {
+										card: { components: [{ type: 'button', label: 'Old', value: 'old' }] },
+									},
 								},
-							},
-						],
-						status: 'awaitingUser',
-					} satisfies ChatMessage,
-				],
-				messagingState: 'idle',
-			},
-		});
+								{
+									toolName: 'chat_action',
+									toolCallId: 'tc-active',
+									runId: 'run-active',
+									input: {
+										card: { components: [{ type: 'button', label: 'Approve', value: 'approve' }] },
+									},
+								},
+							],
+							status: 'awaitingUser',
+						} satisfies ChatMessage,
+					],
+					messagingState: 'idle',
+				},
+			});
 
-		const cards = wrapper.findAll('[data-testid="interactive-card-stub"]');
-		expect(cards).toHaveLength(1);
-		expect(cards[0].attributes('data-tool-call-id')).toBe('tc-active');
-		expect(cards[0].attributes('data-run-id')).toBe('run-active');
-	});
+			const cards = wrapper.findAll('[data-testid="interactive-card-stub"]');
+			expect(cards).toHaveLength(1);
+			expect(cards[0].attributes('data-tool-call-id')).toBe('tc-active');
+			expect(cards[0].attributes('data-run-id')).toBe('run-active');
+		},
+	);
 
 	it('does not render external-wait notice for suspended chat_action tool (toolRun path)', () => {
 		// isGroupable: role=assistant, toolCalls.length>0, content is empty → toolRun group
@@ -845,5 +1005,86 @@ describe('AgentChatMessageList', () => {
 		await wrapper.find('[data-test-id="agent-chat-message-copy"]').trigger('click');
 		await flushPromises();
 		expect(copySpy).toHaveBeenCalledWith('First reply\n\nSecond reply');
+	});
+
+	describe('timestamp dividers', () => {
+		const T0 = Date.parse('2026-04-26T10:00:00Z');
+
+		it('renders a divider above the first user message', () => {
+			const wrapper = mount(AgentChatMessageList, {
+				props: {
+					messages: [
+						{ id: 'user-1', role: 'user', content: 'Hi', status: 'success', createdAt: T0 },
+					] satisfies ChatMessage[],
+					messagingState: 'idle',
+				},
+			});
+
+			expect(wrapper.findAll('[data-testid="agent-chat-timestamp-divider"]')).toHaveLength(1);
+		});
+
+		it('renders a divider again only once the gap exceeds the window', () => {
+			const wrapper = mount(AgentChatMessageList, {
+				props: {
+					messages: [
+						{ id: 'user-1', role: 'user', content: 'Hi', status: 'success', createdAt: T0 },
+						{
+							id: 'user-2',
+							role: 'user',
+							content: 'Again',
+							status: 'success',
+							createdAt: T0 + 5 * 60_000,
+						},
+						{
+							id: 'user-3',
+							role: 'user',
+							content: 'Later',
+							status: 'success',
+							createdAt: T0 + 2 * 60 * 60_000,
+						},
+					] satisfies ChatMessage[],
+					messagingState: 'idle',
+				},
+			});
+
+			expect(wrapper.findAll('[data-testid="agent-chat-timestamp-divider"]')).toHaveLength(2);
+		});
+
+		it('renders a divider across midnight even inside the window', () => {
+			// Local time on purpose: the rule is about the viewer's calendar day.
+			const lateNight = new Date('2026-04-26T23:40:00').getTime();
+			const afterMidnight = new Date('2026-04-27T00:20:00').getTime();
+			const wrapper = mount(AgentChatMessageList, {
+				props: {
+					messages: [
+						{ id: 'user-1', role: 'user', content: 'Hi', status: 'success', createdAt: lateNight },
+						{
+							id: 'user-2',
+							role: 'user',
+							content: 'Again',
+							status: 'success',
+							createdAt: afterMidnight,
+						},
+					] satisfies ChatMessage[],
+					messagingState: 'idle',
+				},
+			});
+
+			expect(wrapper.findAll('[data-testid="agent-chat-timestamp-divider"]')).toHaveLength(2);
+		});
+
+		it('renders no divider at all when createdAt is absent', () => {
+			const wrapper = mount(AgentChatMessageList, {
+				props: {
+					messages: [
+						{ id: 'user-1', role: 'user', content: 'Hi', status: 'success' },
+						{ id: 'user-2', role: 'user', content: 'Again', status: 'success' },
+					] satisfies ChatMessage[],
+					messagingState: 'idle',
+				},
+			});
+
+			expect(wrapper.findAll('[data-testid="agent-chat-timestamp-divider"]')).toHaveLength(0);
+		});
 	});
 });

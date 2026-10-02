@@ -1,10 +1,10 @@
 import type { LicenseState } from '@n8n/backend-common';
 import type { OutboundHttp } from '@n8n/backend-network';
+import type { EventService } from '@n8n/backend-services';
 import type { WorkflowRepository } from '@n8n/db';
 import type { TEntitlement } from '@n8n_io/license-sdk';
 import { mock } from 'vitest-mock-extended';
 
-import type { EventService } from '@/events/event.service';
 import type { License } from '@/license';
 import { LicenseService } from '@/license/license.service';
 

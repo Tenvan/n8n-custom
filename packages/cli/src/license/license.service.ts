@@ -1,12 +1,11 @@
 import { LicenseState, Logger } from '@n8n/backend-common';
 import { OutboundHttp } from '@n8n/backend-network';
+import { EventService, UrlService } from '@n8n/backend-services';
 import type { User } from '@n8n/db';
 import { WorkflowRepository } from '@n8n/db';
 import { Service } from '@n8n/di';
 
-import { EventService } from '@/events/event.service';
 import { License } from '@/license';
-import { UrlService } from '@/services/url.service';
 
 export const LicenseErrors = {
 	SCHEMA_VALIDATION: 'Activation key is in the wrong format',
